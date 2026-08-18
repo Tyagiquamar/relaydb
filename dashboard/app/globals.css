@@ -3,7 +3,49 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: #263246;
+  }
+
   body {
-    @apply bg-gray-950 text-gray-100;
+    @apply bg-[#080d16] text-slate-100;
+    background-image:
+      linear-gradient(rgba(38, 50, 70, 0.15) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(38, 50, 70, 0.15) 1px, transparent 1px);
+    background-size: 32px 32px;
+    font-family: Bahnschrift, "Trebuchet MS", "Segoe UI", sans-serif;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: rgba(34, 211, 238, 0.28);
+    color: #ecfeff;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .font-display {
+    font-family: Bahnschrift, "Trebuchet MS", "Segoe UI", sans-serif;
+  }
+
+  .font-data {
+    font-family: "Cascadia Code", Consolas, monospace;
   }
 }
