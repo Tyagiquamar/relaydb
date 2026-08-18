@@ -2,7 +2,13 @@
 
 **Repo:** `D:\pers\relaydb` (git, branch `main`, no remote)
 **Plan being executed:** [docs/plans/2026-08-18-001-feat-relaydb-cdc-platform-plan.md](docs/plans/2026-08-18-001-feat-relaydb-cdc-platform-plan.md)
-**State:** All 14 units coded. **NOT deployable end-to-end.** Three blockers listed below.
+**State:** Local end-to-end dashboard/CDC smoke-run is complete and Docker images build. Hosted deployment is prepared but blocked only by Railway account billing; see [docs/deployment.md](deployment.md).
+
+> **Current status supersedes the historical blocker list below.** The original
+> blockers were resolved in commits `e36cf0c` and `47a617d`; the remaining
+> implementation gaps are replay execution, consumer redelivery policy, and
+> integration/failure test coverage. Railway project creation was blocked by an
+> expired trial, before any cloud resources were created.
 
 ---
 

@@ -17,12 +17,27 @@ RelayDB is a production-style change-data-capture (CDC) and replay platform buil
 # Start all services (source PG, metadata PG, api, capture, delivery, dashboard)
 docker compose up
 
-# In another terminal, generate demo traffic
-go run ./cmd/demo-commerce
+# Open the live operations dashboard
+# http://localhost:3000
+
+# Start the demo commerce order API
+docker compose --profile demo up -d demo-commerce
+
+# Create an order to generate CDC events
+curl -X POST http://localhost:8081/orders \
+	-H "Content-Type: application/json" \
+	-d '{"customer_id":1,"items":[{"product_id":1,"quantity":1}]}'
 
 # Watch events
 relayctl events tail --source demo --table orders
 ```
+
+## Deployment
+
+The dashboard is designed for Vercel, with the stateful backend deployed on a
+container host. See [docs/deployment.md](docs/deployment.md) for the verified
+local topology, production environment variables, and the current Railway
+account prerequisite.
 
 ## Architecture
 

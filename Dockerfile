@@ -61,7 +61,7 @@ ENTRYPOINT ["/demo-commerce"]
 # Dashboard build stage
 FROM node:24-alpine AS dashboard-builder
 WORKDIR /build
-COPY dashboard/package.json dashboard/pnpm-lock.yaml* ./
+COPY dashboard/package.json dashboard/pnpm-lock.yaml* dashboard/pnpm-workspace.yaml* ./
 RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY dashboard/ .
@@ -72,6 +72,17 @@ FROM node:24-alpine AS dashboard
 WORKDIR /app
 COPY --from=dashboard-builder /build/.next/standalone ./
 COPY --from=dashboard-builder /build/.next/static ./.next/static
-COPY --from=dashboard-builder /build/public ./public
 EXPOSE 3000
 ENTRYPOINT ["node", "server.js"]
+
+# Railway's default Docker build uses the final stage. RELAYDB_RUN selects
+# which prebuilt binary the Railway service should execute.
+FROM alpine:latest AS railway
+RUN apk --no-cache add ca-certificates wget
+COPY --from=builder /bin/api /api
+COPY --from=builder /bin/capture /capture
+COPY --from=builder /bin/delivery /delivery
+COPY --from=builder /bin/demo-commerce /demo-commerce
+COPY docker/railway-entrypoint.sh /railway-entrypoint.sh
+RUN chmod +x /railway-entrypoint.sh
+ENTRYPOINT ["/railway-entrypoint.sh"]

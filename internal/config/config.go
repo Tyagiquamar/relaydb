@@ -67,7 +67,7 @@ func Load() (Config, error) {
 		Env:     env("RELAYDB_ENV", "development"),
 		Service: env("RELAYDB_SERVICE", "api"),
 
-		HTTPAddr: env("RELAYDB_HTTP_ADDR", ":8080"),
+		HTTPAddr: env("RELAYDB_HTTP_ADDR", ":"+env("PORT", "8080")),
 		GRPCAddr: env("RELAYDB_GRPC_ADDR", ":9090"),
 
 		MetadataDBURL: env("RELAYDB_METADATA_DB_URL", "postgres://relaydb:relaydb@localhost:5433/relaydb?sslmode=disable"),

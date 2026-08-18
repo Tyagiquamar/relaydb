@@ -168,6 +168,9 @@ services:
       target: demo-commerce
     environment:
       RELAYDB_SOURCE_DB_URL: postgres://relaydb:relaydb@source-postgres:5432/commerce
+      RELAYDB_HTTP_ADDR: :8081
+    ports:
+      - "8081:8081"
     depends_on:
       source-postgres:
         condition: service_healthy

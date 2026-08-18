@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -44,11 +43,10 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	port := 8081
-	logger.Info("demo-commerce listening", "port", port)
+	logger.Info("demo-commerce listening", "addr", cfg.HTTPAddr)
 	logger.Info("endpoints: POST /orders, POST /orders/{id}/pay, POST /orders/{id}/cancel")
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
+	if err := http.ListenAndServe(cfg.HTTPAddr, mux); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -31,8 +31,8 @@ func TestTupleToMap(t *testing.T) {
 	if result["id"].State != eventstore.ColumnStateValue {
 		t.Errorf("id state = %v, want value", result["id"].State)
 	}
-	if string(result["id"].Value) != "123" {
-		t.Errorf("id value = %q, want %q", result["id"].Value, "123")
+	if string(result["id"].Value) != `"123"` {
+		t.Errorf("id value = %q, want JSON string %q", result["id"].Value, `"123"`)
 	}
 
 	if result["name"].State != eventstore.ColumnStateNull {
