@@ -38,6 +38,9 @@ type Service struct {
 	generation int64
 	flushedLSN replication.LSN
 
+	// Relation version IDs: "oid:fingerprint" -> relation_versions.id
+	relVersions sync.Map
+
 	// Test hooks
 	crashAfterCommit bool
 }
@@ -177,6 +180,16 @@ func (h *captureHandler) OnMessage(ctx context.Context, msg replication.Message)
 	s := h.service
 
 	switch m := msg.(type) {
+	case *pglogrepl.RelationMessage:
+		// Schema (version) observed: update decode cache and persist the
+		// relation version so events can reference it (NOT NULL FK).
+		rel := replication.FromMessage(m)
+		s.relations.Set(m.RelationID, rel)
+		if _, err := s.persistRelationVersion(ctx, rel); err != nil {
+			return 0, err
+		}
+		return 0, nil
+
 	case *pglogrepl.BeginMessage:
 		s.mu.Lock()
 		s.currentXID = m.Xid
@@ -240,6 +253,12 @@ func (s *Service) handleRowChange(relationID uint32, newTuple, oldTuple *pglogre
 		Operation:  op,
 	}
 
+	versionID, err := s.persistRelationVersion(context.Background(), rel)
+	if err != nil {
+		return fmt.Errorf("relation version: %w", err)
+	}
+	event.RelationVersionID = versionID
+
 	// Decode new tuple (INSERT/UPDATE)
 	if newTuple != nil {
 		values, err := s.decoder.DecodeTuple(rel, newTuple)
@@ -265,6 +284,8 @@ func (s *Service) handleRowChange(relationID uint32, newTuple, oldTuple *pglogre
 }
 
 // tupleToMap converts decoded tuple values to the event column map.
+// pgoutput sends text-encoded values; they must be valid JSON when stored in
+// the jsonb payload, so plain scalars are JSON-encoded (strings quoted).
 func tupleToMap(values []replication.TupleValue) map[string]eventstore.ColumnValue {
 	result := make(map[string]eventstore.ColumnValue, len(values))
 	for _, v := range values {
@@ -272,11 +293,52 @@ func tupleToMap(values []replication.TupleValue) map[string]eventstore.ColumnVal
 			State: eventstore.ColumnState(v.State),
 		}
 		if v.State == replication.ColumnStateValue && v.Value != nil {
-			cv.Value = v.Value
+			cv.Value = toJSONValue(v.Value, v.Column.TypeOID)
 		}
 		result[v.Column.Name] = cv
 	}
 	return result
+}
+
+// toJSONValue converts a text-encoded pgoutput value into valid JSON bytes.
+// Values from JSON/JSONB columns are already valid JSON and pass through;
+// everything else is treated as a scalar and JSON-encoded (quoting strings).
+func toJSONValue(textVal []byte, typeOID uint32) json.RawMessage {
+	s := string(textVal)
+
+	// JSON/JSONB column OIDs: 114 (json), 3802 (jsonb). Their text encoding is
+	// already valid JSON — pass through verbatim.
+	if typeOID == 114 || typeOID == 3802 {
+		if json.Valid(textVal) {
+			return json.RawMessage(textVal)
+		}
+	}
+
+	// bool OID 16 comes through as "t"/"f" in pgoutput text mode.
+	if typeOID == 16 {
+		if s == "t" {
+			return json.RawMessage("true")
+		}
+		if s == "f" {
+			return json.RawMessage("false")
+		}
+	}
+
+	// Numeric OIDs: int2/4/8 (21/23/20), float4/8 (700/701), numeric (1700).
+	// Their text form is valid JSON when it parses as a number.
+	switch typeOID {
+	case 21, 23, 20, 700, 701, 1700:
+		if json.Valid(textVal) {
+			return json.RawMessage(textVal)
+		}
+	}
+
+	// Default: JSON-encode as a string (handles escaping).
+	encoded, err := json.Marshal(s)
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return json.RawMessage(encoded)
 }
 
 // extractKey extracts key column values for partitioning.
@@ -341,10 +403,26 @@ func (s *Service) persistTransaction(commitEndLSN replication.LSN, commitTime ti
 // ingestCommittedTransaction performs the atomic ingest: COPY-to-staging, guarded insert,
 // transaction record upsert, and fenced checkpoint update (KTD-7).
 func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid uint32, commitEndLSN replication.LSN, commitTime time.Time, events []*eventstore.Event) error {
-	// 1. Create transaction-local staging table
+	// 1. Create transaction-local staging table.
+	// pg_lsn and jsonb are staged as TEXT and cast in the INSERT..SELECT so
+	// that pgx's binary COPY encoder (which has no pg_lsn codec) never has to
+	// binary-encode those types (SQLSTATE 22P03).
 	if _, err := tx.Exec(ctx, `
 		CREATE TEMPORARY TABLE IF NOT EXISTS events_staging (
-			LIKE events INCLUDING DEFAULTS
+			id BYTEA,
+			source_id TEXT,
+			transaction_id TEXT,
+			commit_end_lsn TEXT,
+			sequence_number INT,
+			schema_name TEXT,
+			table_name TEXT,
+			operation TEXT,
+			relation_version_id BIGINT,
+			"before" TEXT,
+			"after" TEXT,
+			key_columns TEXT,
+			payload_hash TEXT,
+			created_at TIMESTAMPTZ
 		) ON COMMIT DROP
 	`); err != nil {
 		return fmt.Errorf("create staging: %w", err)
@@ -390,7 +468,7 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (source_id, commit_end_lsn) DO UPDATE SET xid = cdc_transactions.xid
 		RETURNING id
-	`, s.sourceID, fmt.Sprintf("%d", xid), pglogrepl.LSN(commitEndLSN).String(), commitTime, len(events)).Scan(&txID)
+	`, s.sourceID, uint64(xid), pglogrepl.LSN(commitEndLSN).String(), commitTime, len(events)).Scan(&txID)
 	if err != nil {
 		return fmt.Errorf("upsert transaction: %w", err)
 	}
@@ -399,10 +477,10 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO events (id, source_id, transaction_id, commit_end_lsn, sequence_number,
 		                    schema_name, table_name, operation, relation_version_id,
-		                    before, after, key_columns, payload_hash, created_at)
-		SELECT id, source_id, $2::uuid, commit_end_lsn, sequence_number,
+		                    "before", "after", key_columns, payload_hash, created_at)
+		SELECT id, source_id::uuid, $1::uuid, commit_end_lsn::pg_lsn, sequence_number,
 		       schema_name, table_name, operation, relation_version_id,
-		       before, after, key_columns, payload_hash, created_at
+		       "before"::jsonb, "after"::jsonb, key_columns::jsonb, payload_hash, created_at
 		FROM events_staging
 		ON CONFLICT (source_id, commit_end_lsn, sequence_number) DO NOTHING
 	`, txID)
@@ -414,8 +492,8 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 	var mismatchCount int
 	err = tx.QueryRow(ctx, `
 		SELECT count(*) FROM events_staging st
-		JOIN events e ON e.source_id = st.source_id 
-			AND e.commit_end_lsn = st.commit_end_lsn 
+		JOIN events e ON e.source_id = st.source_id::uuid
+			AND e.commit_end_lsn = st.commit_end_lsn::pg_lsn
 			AND e.sequence_number = st.sequence_number
 		WHERE e.payload_hash != st.payload_hash
 	`).Scan(&mismatchCount)
@@ -455,6 +533,55 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 	}
 
 	return nil
+}
+
+// persistRelationVersion records an observed relation schema version and
+// returns its relation_versions.id. Results are cached by oid:fingerprint.
+func (s *Service) persistRelationVersion(ctx context.Context, rel *replication.Relation) (int64, error) {
+	cacheKey := fmt.Sprintf("%d:%s", rel.OID, rel.Fingerprint)
+	if v, ok := s.relVersions.Load(cacheKey); ok {
+		return v.(int64), nil
+	}
+
+	defs := make([]eventstore.ColumnDef, len(rel.Columns))
+	for i, c := range rel.Columns {
+		defs[i] = eventstore.ColumnDef{
+			Name:     c.Name,
+			Type:     fmt.Sprintf("%d", c.TypeOID),
+			Nullable: c.Nullable,
+			Position: c.Position,
+		}
+	}
+	defsJSON, err := json.Marshal(defs)
+	if err != nil {
+		return 0, fmt.Errorf("marshal column definitions: %w", err)
+	}
+
+	replicaIdentity := map[replication.ReplicaIdentity]string{
+		replication.ReplicaIdentityDefault: "default",
+		replication.ReplicaIdentityNothing: "nothing",
+		replication.ReplicaIdentityFull:    "full",
+		replication.ReplicaIdentityIndex:   "index",
+	}[rel.ReplicaIdentity]
+	if replicaIdentity == "" {
+		replicaIdentity = "default"
+	}
+
+	var id int64
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO relation_versions (source_id, relation_oid, schema_name, table_name,
+		                               fingerprint, column_definitions, replica_identity)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (source_id, relation_oid, fingerprint)
+		DO UPDATE SET schema_name = EXCLUDED.schema_name
+		RETURNING id
+	`, s.sourceID, rel.OID, rel.Namespace, rel.Name, rel.Fingerprint, defsJSON, replicaIdentity).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("upsert relation version for %s.%s: %w", rel.Namespace, rel.Name, err)
+	}
+
+	s.relVersions.Store(cacheKey, id)
+	return id, nil
 }
 
 func nullIfEmpty(b []byte) any {

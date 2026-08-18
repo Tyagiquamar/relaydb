@@ -22,6 +22,7 @@ type Config struct {
 
 	// Source database (where we capture from) — only for capture service
 	SourceDBURL string
+	SourceName  string // name of the sources row this capture instance owns
 
 	// Replication settings
 	ReplicationSlot    string
@@ -71,6 +72,7 @@ func Load() (Config, error) {
 
 		MetadataDBURL: env("RELAYDB_METADATA_DB_URL", "postgres://relaydb:relaydb@localhost:5433/relaydb?sslmode=disable"),
 		SourceDBURL:   env("RELAYDB_SOURCE_DB_URL", ""),
+		SourceName:    env("RELAYDB_SOURCE_NAME", "demo"),
 
 		ReplicationSlot:       env("RELAYDB_REPLICATION_SLOT", "relaydb_slot"),
 		Publication:           env("RELAYDB_PUBLICATION", "relaydb_pub"),

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 )
 
 //go:embed migrations/*.sql
@@ -129,21 +127,36 @@ func (m *Migrator) getAppliedVersions(ctx context.Context) (map[int]bool, error)
 }
 
 // applyMigration applies a single migration within a transaction.
+// The SQL file contains '--' comments and multiple statements, so it is sent
+// through the raw pgconn multi-statement simple protocol instead of tx.Exec,
+// whose naive statement splitter breaks on semicolons inside comments.
 func (m *Migrator) applyMigration(ctx context.Context, mig Migration) error {
-	return WithTx(ctx, m.pool, func(tx pgx.Tx) error {
-		// Apply the migration SQL
-		if _, err := tx.Exec(ctx, mig.SQL); err != nil {
-			return fmt.Errorf("execute %s: %w", mig.Name, err)
-		}
+	conn, err := m.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn: %w", err)
+	}
+	defer conn.Release()
 
-		// Record the migration
-		if _, err := tx.Exec(ctx,
-			"INSERT INTO schema_migrations (version) VALUES ($1)",
-			mig.Version,
-		); err != nil {
-			return fmt.Errorf("record migration: %w", err)
-		}
+	if _, err := conn.Exec(ctx, "BEGIN"); err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
 
-		return nil
-	})
+	res := conn.Conn().PgConn().Exec(ctx, mig.SQL)
+	if _, err := res.ReadAll(); err != nil {
+		_, _ = conn.Exec(ctx, "ROLLBACK")
+		return fmt.Errorf("execute %s: %w", mig.Name, err)
+	}
+
+	if _, err := conn.Exec(ctx,
+		"INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
+		mig.Version,
+	); err != nil {
+		_, _ = conn.Exec(ctx, "ROLLBACK")
+		return fmt.Errorf("record migration: %w", err)
+	}
+
+	if _, err := conn.Exec(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }

@@ -328,7 +328,7 @@ CREATE INDEX idx_cdc_transactions_timestamp ON cdc_transactions(commit_timestamp
 
 CREATE INDEX idx_delivery_attempts_pending ON delivery_attempts(status, next_retry_at) 
     WHERE status = 'pending' OR status = 'retryable';
-CREATE INDEX idx_delivery_attempts_sink ON delivery_attempts(sink_id, created_at);
+CREATE INDEX idx_delivery_attempts_sink ON delivery_attempts(sink_id, started_at);
 
 CREATE INDEX idx_dlq_status ON dead_letter_events(status, created_at);
 CREATE INDEX idx_replay_status ON replay_sessions(status, created_at);

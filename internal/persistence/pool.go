@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tyagiquamar/relaydb/internal/telemetry"
@@ -54,6 +55,18 @@ func NewPool(ctx context.Context, cfg Config) (*Pool, error) {
 	poolCfg.MaxConnLifetimeJitter = cfg.MaxConnLifetimeJitter
 	poolCfg.MaxConnIdleTime = cfg.MaxConnIdleTime
 	poolCfg.HealthCheckPeriod = cfg.HealthCheckPeriod
+
+	// pg_lsn (OID 3220) is not in pgx's default type map. Register a text-format
+	// codec so LSN string params (e.g. "0/1A2B3C8") are parsed server-side by
+	// pg_lsn_in instead of failing with "unknown OID".
+	poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterType(&pgtype.Type{
+			Name:  "pg_lsn",
+			OID:   3220,
+			Codec: &pgtype.TextFormatOnlyCodec{Codec: pgtype.TextCodec{}},
+		})
+		return nil
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/tyagiquamar/relaydb/internal/config"
+	"github.com/tyagiquamar/relaydb/internal/crypto"
 	"github.com/tyagiquamar/relaydb/internal/persistence"
 	"github.com/tyagiquamar/relaydb/internal/telemetry"
 )
@@ -58,6 +59,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/events", s.authReader(s.handleListEvents))
 	mux.HandleFunc("GET /api/v1/events/{id}", s.authReader(s.handleGetEvent))
 	mux.HandleFunc("GET /api/v1/transactions/{xid}", s.authReader(s.handleGetTransaction))
+	mux.HandleFunc("GET /api/v1/stats", s.authReader(s.handleStats))
+	mux.HandleFunc("GET /api/v1/dlq", s.authReader(s.handleListDLQ))
 
 	return mux
 }
@@ -150,18 +153,50 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Encrypt connection string with crypto envelope
-	// TODO: Insert into database
+	slot := req.ReplicationSlot
+	if slot == "" {
+		slot = "relaydb_slot"
+	}
+	pub := req.Publication
+	if pub == "" {
+		pub = "relaydb_pub"
+	}
+
+	// Encrypt connection string with the crypto envelope (KTD-2).
+	// AAD binds the ciphertext to this source name.
+	env, err := crypto.NewEnvelope(s.cfg.MasterKey)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "crypto not configured")
+		return
+	}
+	aad := crypto.ComputeAAD(req.Name, "source-credential")
+	blob, err := env.Encrypt([]byte(req.ConnectionString), aad)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "credential encryption failed")
+		return
+	}
+
+	var id string
+	err = s.pool.QueryRow(r.Context(), `
+		INSERT INTO sources (name, description, credential_blob, replication_slot, publication, status)
+		VALUES ($1, $2, $3, $4, $5, 'registered')
+		RETURNING id
+	`, req.Name, req.Description, blob, slot, pub).Scan(&id)
+	if err != nil {
+		s.writeError(w, http.StatusConflict, fmt.Sprintf("insert source failed: %v", err))
+		return
+	}
 
 	s.writeJSON(w, http.StatusCreated, map[string]any{
-		"name": req.Name,
+		"id":     id,
+		"name":   req.Name,
 		"status": "registered",
 	})
 }
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id, name, description, replication_slot, publication, status, created_at
+		SELECT id, name, COALESCE(description, ''), replication_slot, publication, status, created_at
 		FROM sources
 		ORDER BY created_at DESC
 	`)
@@ -201,7 +236,7 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 	var createdAt, updatedAt time.Time
 
 	err := s.pool.QueryRow(r.Context(), `
-		SELECT name, description, replication_slot, publication, status, created_at, updated_at
+		SELECT name, COALESCE(description, ''), replication_slot, publication, status, created_at, updated_at
 		FROM sources WHERE id = $1
 	`, id).Scan(&name, &desc, &slot, &pub, &status, &createdAt, &updatedAt)
 
@@ -276,10 +311,10 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	operation := r.URL.Query().Get("operation")
 	limit := 100
 
-	// Build query
+	// Build query (id is a 16-byte ULID bytea — return it hex-encoded)
 	query := `
-		SELECT id, source_id, transaction_id, commit_end_lsn::text, sequence_number,
-		       schema_name, table_name, operation, before, after, key_columns,
+		SELECT encode(id, 'hex'), source_id, transaction_id, commit_end_lsn::text, sequence_number,
+		       schema_name, table_name, operation, "before", "after", key_columns,
 		       payload_hash, created_at
 		FROM events
 		WHERE 1=1
@@ -327,6 +362,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 
 		if err := rows.Scan(&id, &sourceID, &txID, &lsn, &seq, &schema, &table, &op,
 			&before, &after, &key, &hash, &createdAt); err != nil {
+			s.logger.Warn("scan event row failed", "error", err)
 			continue
 		}
 
@@ -360,11 +396,11 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	var createdAt time.Time
 
 	err := s.pool.QueryRow(r.Context(), `
-		SELECT source_id, transaction_id, commit_end_lsn::text, sequence_number,
-		       schema_name, table_name, operation, before, after, key_columns,
+		SELECT encode(id, 'hex'), source_id, transaction_id, commit_end_lsn::text, sequence_number,
+		       schema_name, table_name, operation, "before", "after", key_columns,
 		       payload_hash, created_at
-		FROM events WHERE id = $1
-	`, id).Scan(&sourceID, &txID, &lsn, &seq, &schema, &table, &op,
+		FROM events WHERE id = decode($1, 'hex')
+	`, id).Scan(&id, &sourceID, &txID, &lsn, &seq, &schema, &table, &op,
 		&before, &after, &key, &hash, &createdAt)
 
 	if err == pgx.ErrNoRows {
@@ -409,7 +445,7 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT id, source_id, commit_end_lsn::text, commit_timestamp, event_count
-		FROM cdc_transactions WHERE xid = $1
+		FROM cdc_transactions WHERE xid = $1::text::xid8
 	`, xid).Scan(&tx.ID, &tx.SourceID, &tx.CommitLSN, &tx.CommitTimestamp, &tx.EventCount)
 
 	if err == pgx.ErrNoRows {
@@ -423,7 +459,7 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 
 	// Get events
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id, sequence_number, schema_name, table_name, operation, before, after
+		SELECT encode(id, 'hex'), sequence_number, schema_name, table_name, operation, "before", "after"
 		FROM events
 		WHERE transaction_id = $1
 		ORDER BY sequence_number
@@ -466,13 +502,100 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// validateSource checks that a source connection is valid and replica identity is correct.
+// handleStats returns platform-wide metrics for the dashboard overview.
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var stats struct {
+		Sources          int     `json:"sources"`
+		EventsPerSecond  float64 `json:"eventsPerSecond"`
+		CaptureLag       string  `json:"captureLag"`
+		Consumers        int     `json:"consumers"`
+		DLQDepth         int     `json:"dlqDepth"`
+	}
+
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM sources`).Scan(&stats.Sources)
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM consumer_groups`).Scan(&stats.Consumers)
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM dead_letter_events WHERE status = 'pending'`).Scan(&stats.DLQDepth)
+
+	var lastMinute int
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE created_at > now() - interval '1 minute'`).Scan(&lastMinute)
+	stats.EventsPerSecond = float64(lastMinute) / 60.0
+
+	var lagSeconds *float64
+	_ = s.pool.QueryRow(ctx, `SELECT EXTRACT(EPOCH FROM (now() - max(created_at))) FROM events`).Scan(&lagSeconds)
+	if lagSeconds == nil {
+		stats.CaptureLag = "n/a"
+	} else {
+		stats.CaptureLag = fmt.Sprintf("%.1fs", *lagSeconds)
+	}
+
+	s.writeJSON(w, http.StatusOK, stats)
+}
+
+// handleListDLQ lists dead-letter events for the dashboard.
+func (s *Server) handleListDLQ(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT d.id, encode(d.event_id, 'hex'), d.source_id,
+		       COALESCE(d.sink_id::text, ''), d.failure_reason, d.status, d.created_at
+		FROM dead_letter_events d
+		ORDER BY d.created_at DESC
+		LIMIT 100
+	`)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	defer rows.Close()
+
+	entries := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var eventID, sourceID, sinkID, reason, status string
+		var createdAt time.Time
+		if err := rows.Scan(&id, &eventID, &sourceID, &sinkID, &reason, &status, &createdAt); err != nil {
+			continue
+		}
+		entries = append(entries, map[string]any{
+			"id":             id,
+			"event_id":       eventID,
+			"source_id":      sourceID,
+			"sink_id":        sinkID,
+			"failure_reason": reason,
+			"status":         status,
+			"created_at":     createdAt,
+		})
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
+}
+
+// validateSource checks that a source connection is valid and replication-ready.
 func (s *Server) validateSource(ctx context.Context, connStr string) error {
-	// TODO: Connect and validate
-	// 1. Check wal_level = logical
-	// 2. Check max_replication_slots > 0
-	// 3. Check publication exists
-	// 4. Check replica identity on published tables
+	connCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(connCtx, connStr)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer conn.Close(context.Background())
+
+	var walLevel string
+	if err := conn.QueryRow(connCtx, "SHOW wal_level").Scan(&walLevel); err != nil {
+		return fmt.Errorf("read wal_level: %w", err)
+	}
+	if walLevel != "logical" {
+		return fmt.Errorf("wal_level is %q, must be 'logical'", walLevel)
+	}
+
+	var slots string
+	if err := conn.QueryRow(connCtx, "SHOW max_replication_slots").Scan(&slots); err != nil {
+		return fmt.Errorf("read max_replication_slots: %w", err)
+	}
+	if slots == "0" {
+		return fmt.Errorf("max_replication_slots is 0")
+	}
+
 	return nil
 }
 

@@ -120,8 +120,25 @@ services:
       RELAYDB_SERVICE: delivery
       RELAYDB_METADATA_DB_URL: postgres://relaydb:relaydb@metadata-postgres:5432/relaydb?sslmode=disable
       RELAYDB_METRICS_ADDR: :2112
+      RELAYDB_MASTER_KEY: ${RELAYDB_MASTER_KEY:-MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
     depends_on:
       metadata-postgres:
+        condition: service_healthy
+
+  # Dashboard (Next.js) — proxies /api/v1/* to the api service server-side (BFF)
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dashboard
+    environment:
+      RELAYDB_API_URL: http://api:8080
+      RELAYDB_READER_KEY_ID: reader
+      RELAYDB_READER_KEY: ${RELAYDB_READER_KEY:-dev-reader-key-change-in-production}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
         condition: service_healthy
 
   # Prometheus for metrics

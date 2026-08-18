@@ -3,6 +3,7 @@ package replication
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -72,8 +73,18 @@ func NewClient(cfg Config) *Client {
 func (c *Client) Stream(ctx context.Context, startLSN LSN, handler Handler) error {
 	c.handler = handler
 
-	// Create replication connection
-	conn, err := pgconn.Connect(ctx, c.config.DatabaseURL+"&replication=database")
+	// Create replication connection. Build the URL properly so that a
+	// user-supplied RELAYDB_SOURCE_DB_URL with or without existing query
+	// params gets replication=database appended correctly.
+	connURL, err := url.Parse(c.config.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("parse database url: %w", err)
+	}
+	q := connURL.Query()
+	q.Set("replication", "database")
+	connURL.RawQuery = q.Encode()
+
+	conn, err := pgconn.Connect(ctx, connURL.String())
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}

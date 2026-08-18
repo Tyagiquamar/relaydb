@@ -1,6 +1,8 @@
 package eventstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -119,20 +121,20 @@ func EventIDFromBytes(b []byte) (ulid.ULID, error) {
 	return ulid.Parse(string(b))
 }
 
-// ComputePayloadHash computes a deterministic hash of the event payload.
+// ComputePayloadHash computes a deterministic SHA-256 hash of the event payload.
 // This is used for idempotency verification under WAL replay.
 func ComputePayloadHash(e *Event) string {
 	// Create canonical representation for hashing
 	canonical := struct {
-		SourceID      string                 `json:"source_id"`
-		CommitEndLSN  uint64                 `json:"commit_end_lsn"`
-		Sequence      int                    `json:"sequence_number"`
-		Schema        string                 `json:"schema_name"`
-		Table         string                 `json:"table_name"`
-		Operation     Operation              `json:"operation"`
-		Before        map[string]ColumnValue `json:"before"`
-		After         map[string]ColumnValue `json:"after"`
-		Key           map[string]any         `json:"key"`
+		SourceID     string                 `json:"source_id"`
+		CommitEndLSN uint64                 `json:"commit_end_lsn"`
+		Sequence     int                    `json:"sequence_number"`
+		Schema       string                 `json:"schema_name"`
+		Table        string                 `json:"table_name"`
+		Operation    Operation              `json:"operation"`
+		Before       map[string]ColumnValue `json:"before"`
+		After        map[string]ColumnValue `json:"after"`
+		Key          map[string]any         `json:"key"`
 	}{
 		SourceID:     e.SourceID,
 		CommitEndLSN: e.CommitEndLSN,
@@ -146,7 +148,8 @@ func ComputePayloadHash(e *Event) string {
 	}
 
 	data, _ := json.Marshal(canonical)
-	return string(data) // In production, this would be SHA-256 hex
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // IsDuplicate checks if an event with the same identity already exists.
