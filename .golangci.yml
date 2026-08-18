@@ -1,0 +1,59 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - gofmt
+    - govet
+    - errcheck
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - misspell
+    - revive
+    - gosec
+    - unconvert
+    - unparam
+    - prealloc
+    - exportloopref
+    - gocritic
+    - godot
+    - whitespace
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - whyNoLint
+      - hugeParam
+
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+
+  gosec:
+    excludes:
+      - G101 # Potential hardcoded credentials (we have env vars)
+      - G304 # File path from variable (we control our paths)
+
+issues:
+  exclude-rules:
+    # Exclude some linters from test files
+    - path: _test\.go
+      linters:
+        - gosec
+        - gocritic
+        - errcheck
+
+  # Maximum issue count per linter
+  max-issues-per-linter: 0
+  # Maximum issue count per file
+  max-same-issues: 0
