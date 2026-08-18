@@ -13,11 +13,11 @@ func TestPositionCompare(t *testing.T) {
 		a, b replication.Position
 		want int
 	}{
-		{"equal", replication.Position{1000, 1}, replication.Position{1000, 1}, 0},
-		{"lsn less", replication.Position{999, 5}, replication.Position{1000, 1}, -1},
-		{"lsn greater", replication.Position{1001, 1}, replication.Position{1000, 5}, 1},
-		{"seq less", replication.Position{1000, 1}, replication.Position{1000, 2}, -1},
-		{"seq greater", replication.Position{1000, 3}, replication.Position{1000, 2}, 1},
+		{"equal", replication.Position{CommitEndLSN: 1000, SequenceNumber: 1}, replication.Position{CommitEndLSN: 1000, SequenceNumber: 1}, 0},
+		{"lsn less", replication.Position{CommitEndLSN: 999, SequenceNumber: 5}, replication.Position{CommitEndLSN: 1000, SequenceNumber: 1}, -1},
+		{"lsn greater", replication.Position{CommitEndLSN: 1001, SequenceNumber: 1}, replication.Position{CommitEndLSN: 1000, SequenceNumber: 5}, 1},
+		{"seq less", replication.Position{CommitEndLSN: 1000, SequenceNumber: 1}, replication.Position{CommitEndLSN: 1000, SequenceNumber: 2}, -1},
+		{"seq greater", replication.Position{CommitEndLSN: 1000, SequenceNumber: 3}, replication.Position{CommitEndLSN: 1000, SequenceNumber: 2}, 1},
 	}
 
 	for _, tt := range tests {

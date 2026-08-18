@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package relaydb.v1;
+
+option go_package = "github.com/tyagiquamar/relaydb/proto/relaydb/v1;relaydbv1";
+
+// Consumer service for pull-based event consumption.
+service ConsumerService {
+  // Poll requests a batch of events for a partition.
+  rpc Poll(PollRequest) returns (PollResponse);
+
+  // Ack acknowledges processed events.
+  rpc Ack(AckRequest) returns (AckResponse);
+
+  // Nack negatively acknowledges events for redelivery.
+  rpc Nack(NackRequest) returns (NackResponse);
+
+  // Heartbeat renews a partition lease.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message PollRequest {
+  string group_id = 1;
+  string member_id = 2;
+  int32 max_events = 3;
+  int64 max_wait_ms = 4;
+}
+
+message PollResponse {
+  repeated Event events = 1;
+  string lease_owner = 2;
+  int64 lease_generation = 3;
+  int32 partition = 4;
+}
+
+message AckRequest {
+  string group_id = 1;
+  int32 partition = 2;
+  string lease_owner = 3;
+  int64 lease_generation = 4;
+  uint64 commit_end_lsn = 5;
+  int32 sequence_number = 6;
+  bytes last_event_id = 7;
+}
+
+message AckResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message NackRequest {
+  string group_id = 1;
+  int32 partition = 2;
+  string lease_owner = 3;
+  int64 lease_generation = 4;
+  repeated bytes event_ids = 5;
+  int64 retry_after_ms = 6;
+}
+
+message NackResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message HeartbeatRequest {
+  string group_id = 1;
+  int32 partition = 2;
+  string lease_owner = 3;
+  int64 lease_generation = 4;
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  int64 lease_generation = 2;
+  int64 expires_at_unix = 3;
+}
+
+// Event is a CDC event.
+message Event {
+  bytes id = 1;
+  string source_id = 2;
+  string transaction_id = 3;
+  uint64 commit_end_lsn = 4;
+  int32 sequence_number = 5;
+  string schema_name = 6;
+  string table_name = 7;
+  string operation = 8;
+  string before = 9;   // JSON
+  string after = 10;   // JSON
+  string key_columns = 11; // JSON
+  string payload_hash = 12;
+  int64 created_at_unix = 13;
+}

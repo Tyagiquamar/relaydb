@@ -4,8 +4,15 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/tyagiquamar/relaydb/internal/api"
 	"github.com/tyagiquamar/relaydb/internal/config"
+	"github.com/tyagiquamar/relaydb/internal/consumer"
+	relaygrpc "github.com/tyagiquamar/relaydb/internal/grpc"
+	"github.com/tyagiquamar/relaydb/internal/persistence"
 	"github.com/tyagiquamar/relaydb/internal/telemetry"
 )
 
@@ -21,21 +28,47 @@ func main() {
 
 	telemetry.SetBuildInfo("0.1.0", "api")
 
-	// Health endpoints
-	live, ready := telemetry.HealthHandler(func() bool {
-		// TODO: check metadata DB connectivity
-		return true
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	mux := http.NewServeMux()
-	mux.Handle("/health/live", live)
-	mux.Handle("/health/ready", ready)
-	mux.Handle("/metrics", telemetry.MetricsHandler())
+	// Handle shutdown signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		logger.Info("shutting down")
+		cancel()
+	}()
 
-	logger.Info("api listening", "addr", cfg.HTTPAddr)
-	if err := http.ListenAndServe(cfg.HTTPAddr, mux); err != nil {
+	// Connect to metadata database
+	pool, err := persistence.NewPool(ctx, persistence.DefaultConfig(cfg.MetadataDBURL))
+	if err != nil {
+		log.Fatalf("connect to metadata db: %v", err)
+	}
+	defer pool.Close()
+
+	// Run migrations
+	migrator := persistence.NewMigrator(pool)
+	if err := migrator.Migrate(ctx); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+	logger.Info("migrations applied")
+
+	// Create services
+	consumerSvc := consumer.NewService(pool)
+	apiServer := api.NewServer(cfg, pool)
+	grpcServer := relaygrpc.NewServer(cfg, consumerSvc)
+
+	// Start gRPC server
+	go func() {
+		if err := grpcServer.Serve(ctx, cfg.GRPCAddr); err != nil {
+			logger.Error("grpc server error", "error", err)
+		}
+	}()
+
+	// Start HTTP server
+	logger.Info("api listening", "http", cfg.HTTPAddr, "grpc", cfg.GRPCAddr)
+	if err := http.ListenAndServe(cfg.HTTPAddr, apiServer.Handler()); err != nil {
 		log.Fatal(err)
 	}
 }
-
-var _ = context.Background // for future use

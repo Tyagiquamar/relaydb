@@ -1,0 +1,11 @@
+bin/
+gen/
+dashboard/.next/
+dashboard/node_modules/
+dashboard/out/
+*.log
+.env
+.env.local
+.env.*.local
+tools/
+build.log

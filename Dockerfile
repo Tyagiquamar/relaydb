@@ -57,3 +57,21 @@ FROM alpine:latest AS demo-commerce
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /bin/demo-commerce /demo-commerce
 ENTRYPOINT ["/demo-commerce"]
+
+# Dashboard build stage
+FROM node:24-alpine AS dashboard-builder
+WORKDIR /build
+COPY dashboard/package.json dashboard/pnpm-lock.yaml* ./
+RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN pnpm install --frozen-lockfile || pnpm install
+COPY dashboard/ .
+RUN pnpm build
+
+# Dashboard image
+FROM node:24-alpine AS dashboard
+WORKDIR /app
+COPY --from=dashboard-builder /build/.next/standalone ./
+COPY --from=dashboard-builder /build/.next/static ./.next/static
+COPY --from=dashboard-builder /build/public ./public
+EXPOSE 3000
+ENTRYPOINT ["node", "server.js"]
