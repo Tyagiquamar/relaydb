@@ -1,0 +1,30 @@
+# All-in-one demo image for free-tier hosts (Render, SnapDeploy).
+# Bundles PostgreSQL 16 (logical replication, seeded commerce source) with the
+# api + capture + delivery services in a single container. Data is disposable
+# demo state; use "Dockerfile.demo" as the Dockerfile path in the host UI.
+
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/capture ./cmd/capture
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/delivery ./cmd/delivery
+
+FROM postgres:16-alpine
+
+COPY --from=builder /bin/api /bin/api
+COPY --from=builder /bin/capture /bin/capture
+COPY --from=builder /bin/delivery /bin/delivery
+COPY docker/postgres/postgresql.conf /etc/postgresql/postgresql.conf
+COPY docker/postgres/pg_hba.conf /etc/postgresql/pg_hba.conf
+COPY examples/commerce/seed.sql /seed/commerce-seed.sql
+COPY docker/allinone-entrypoint.sh /allinone-entrypoint.sh
+RUN chmod +x /allinone-entrypoint.sh
+
+# The platform entrypoint overrides the postgres image entrypoint and starts
+# postgres itself before launching the RelayDB services.
+EXPOSE 8080 9090
+ENTRYPOINT ["/allinone-entrypoint.sh"]
