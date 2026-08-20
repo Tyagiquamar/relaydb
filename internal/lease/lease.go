@@ -64,7 +64,7 @@ func (m *Manager) Claim(ctx context.Context, groupID string, partition int, owne
 
 // Heartbeat renews a lease.
 func (m *Manager) Heartbeat(ctx context.Context, lease *Lease, duration time.Duration) error {
-	result, err := m.pool.Exec(ctx, `
+	err := m.pool.QueryRow(ctx, `
 		UPDATE partition_leases
 		SET lease_expires_at = now() + $4::interval,
 		    heartbeat_at = now()
@@ -73,13 +73,13 @@ func (m *Manager) Heartbeat(ctx context.Context, lease *Lease, duration time.Dur
 		  AND lease_owner = $3
 		  AND lease_generation = $5
 		  AND lease_expires_at > now()
-	`, lease.GroupID, lease.Partition, lease.Owner, duration, lease.Generation)
-
+		RETURNING lease_expires_at
+	`, lease.GroupID, lease.Partition, lease.Owner, duration, lease.Generation).Scan(&lease.ExpiresAt)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("fencing violation: lease expired or stolen")
+		}
 		return fmt.Errorf("heartbeat: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("fencing violation: lease expired or stolen")
 	}
 	return nil
 }

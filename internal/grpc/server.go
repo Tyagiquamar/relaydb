@@ -132,5 +132,14 @@ func (s *Server) Nack(ctx context.Context, req *relaydbv1.NackRequest) (*relaydb
 
 // Heartbeat implements ConsumerService.Heartbeat.
 func (s *Server) Heartbeat(ctx context.Context, req *relaydbv1.HeartbeatRequest) (*relaydbv1.HeartbeatResponse, error) {
-	return &relaydbv1.HeartbeatResponse{Success: true, LeaseGeneration: req.LeaseGeneration}, nil
+	leaseObj, err := s.consumer.Heartbeat(ctx, req.GroupId, int(req.Partition), req.LeaseOwner,
+		req.LeaseGeneration, s.cfg.LeaseDuration)
+	if err != nil {
+		return &relaydbv1.HeartbeatResponse{Success: false, LeaseGeneration: req.LeaseGeneration}, nil
+	}
+	return &relaydbv1.HeartbeatResponse{
+		Success:         true,
+		LeaseGeneration: leaseObj.Generation,
+		ExpiresAtUnix:   leaseObj.ExpiresAt.Unix(),
+	}, nil
 }

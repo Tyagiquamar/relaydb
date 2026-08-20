@@ -2,14 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { CircleAlert, Database, RefreshCw, Send, ShieldCheck } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 import { EventRecord, EventTable } from '../components/event-table'
 import { DashboardStats, MetricStrip } from '../components/metric-strip'
-
-type Source = {
-  id: string
-  name: string
-  status: string
-}
+import { DashboardMode, getDashboardData, resolveMode, SourceRecord } from '../lib/dashboard-data'
 
 const initialStats: DashboardStats = {
   sources: 0,
@@ -22,9 +18,11 @@ const initialStats: DashboardStats = {
 const demoApiUrl = process.env.NEXT_PUBLIC_DEMO_API_URL
 
 export default function Dashboard() {
+  const searchParams = useSearchParams()
+  const mode = resolveMode(searchParams.get('mode'))
   const [stats, setStats] = useState<DashboardStats>(initialStats)
   const [events, setEvents] = useState<EventRecord[]>([])
-  const [sources, setSources] = useState<Source[]>([])
+  const [sources, setSources] = useState<SourceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
@@ -34,26 +32,11 @@ export default function Dashboard() {
     if (manual) setRefreshing(true)
 
     try {
-      const [statsResponse, eventsResponse, sourcesResponse] = await Promise.all([
-        fetch('/api/v1/stats', { cache: 'no-store' }),
-        fetch('/api/v1/events?limit=12', { cache: 'no-store' }),
-        fetch('/api/v1/sources', { cache: 'no-store' }),
-      ])
-
-      if (!statsResponse.ok || !eventsResponse.ok || !sourcesResponse.ok) {
-        throw new Error('RelayDB API is unavailable')
-      }
-
-      const [statsData, eventsData, sourcesData] = await Promise.all([
-        statsResponse.json() as Promise<DashboardStats>,
-        eventsResponse.json() as Promise<{ events: EventRecord[] | null }>,
-        sourcesResponse.json() as Promise<{ sources: Source[] | null }>,
-      ])
-
-      setStats(statsData)
-      setEvents(eventsData.events ?? [])
-      setSources(sourcesData.sources ?? [])
-      setLastUpdated(new Date())
+      const data = await getDashboardData(mode)
+      setStats(data.stats)
+      setEvents(data.events.slice(0, 12))
+      setSources(data.sources)
+      setLastUpdated(new Date(data.observedAt))
       setError('')
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Unable to refresh pipeline state')
@@ -61,7 +44,7 @@ export default function Dashboard() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [mode])
 
   useEffect(() => {
     void refresh()
@@ -100,7 +83,7 @@ export default function Dashboard() {
             Pipeline overview
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-50">Capture operations</h1>
-          <p className="mt-1 text-sm text-slate-500">{source ? `${source.name} · ${source.status}` : 'Waiting for a registered source'}</p>
+          <p className="mt-1 text-sm text-slate-500">{mode === 'demo' ? 'Deterministic fixture set for CDC inspection' : source ? `${source.name} · ${source.status}` : 'Waiting for a registered source'}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -109,7 +92,7 @@ export default function Dashboard() {
             <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <button className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={!demoApiUrl || refreshing} onClick={() => void createDemoOrder()} title={demoApiUrl ? 'Create a demo order' : 'Set NEXT_PUBLIC_DEMO_API_URL to enable demo orders'} type="button">
+          <button className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={mode === 'demo' || !demoApiUrl || refreshing} onClick={() => void createDemoOrder()} title={mode === 'demo' ? 'Switch to Live to generate a real demo order' : demoApiUrl ? 'Create a demo order' : 'Set NEXT_PUBLIC_DEMO_API_URL to enable demo orders'} type="button">
             <Send aria-hidden="true" className="h-3.5 w-3.5" />
             Generate event
           </button>

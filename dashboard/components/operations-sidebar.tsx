@@ -8,7 +8,9 @@ import {
   RadioTower,
   ShieldAlert,
 } from 'lucide-react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { modeHref, resolveMode } from '../lib/dashboard-data'
+import { ModeToggle } from './mode-toggle'
 
 const navigation = [
   { href: '/', label: 'Overview', icon: Activity },
@@ -21,6 +23,8 @@ const navigation = [
 
 export function OperationsSidebar() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const mode = resolveMode(searchParams.get('mode'))
 
   return (
     <aside className="border-b border-[#263246] bg-[#0b1220] lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:shrink-0 lg:border-b-0 lg:border-r">
@@ -30,9 +34,9 @@ export function OperationsSidebar() {
             <p className="font-display text-lg font-semibold tracking-[0.08em] text-slate-50">RELAYDB</p>
             <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">CDC control room</p>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_#67e8f9]" />
-            Live
+          <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${mode === 'demo' ? 'border-amber-400/20 bg-amber-400/10 text-amber-200' : 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full shadow-[0_0_10px] ${mode === 'demo' ? 'bg-amber-300 shadow-amber-300' : 'bg-cyan-300 shadow-cyan-300'}`} />
+            {mode === 'demo' ? 'Demo' : 'Live'}
           </span>
         </div>
 
@@ -47,7 +51,8 @@ export function OperationsSidebar() {
                     ? 'bg-cyan-400/10 text-cyan-200 shadow-[inset_2px_0_0_#22d3ee]'
                     : 'text-slate-400 hover:bg-slate-800/70 hover:text-slate-100'
                 }`}
-                href={href}
+                aria-current={active ? 'page' : undefined}
+                href={modeHref(href, mode)}
                 key={href}
               >
                 <Icon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={active ? 2.4 : 1.8} />
@@ -59,7 +64,8 @@ export function OperationsSidebar() {
 
         <div className="mt-auto hidden border-t border-[#1d293a] px-5 py-5 lg:block">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Environment</p>
-          <p className="mt-1 font-mono text-xs text-slate-300">development</p>
+          <div className="mt-2"><ModeToggle /></div>
+          <p className="mt-3 font-mono text-xs text-slate-300">{mode === 'demo' ? 'deterministic fixtures' : 'configured API'}</p>
         </div>
       </div>
     </aside>

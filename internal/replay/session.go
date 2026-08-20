@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -123,18 +125,24 @@ func (s *Service) Get(ctx context.Context, sessionID string) (*Session, error) {
 
 	// Parse LSNs
 	if startLSN != nil {
-		var lsn uint64
-		fmt.Sscanf(*startLSN, "%X", &lsn)
+		lsn, err := parseLSN(*startLSN)
+		if err != nil {
+			return nil, fmt.Errorf("parse replay start LSN: %w", err)
+		}
 		sess.StartLSN = &lsn
 	}
 	if endLSN != nil {
-		var lsn uint64
-		fmt.Sscanf(*endLSN, "%X", &lsn)
+		lsn, err := parseLSN(*endLSN)
+		if err != nil {
+			return nil, fmt.Errorf("parse replay end LSN: %w", err)
+		}
 		sess.EndLSN = &lsn
 	}
 	if lastLSN != nil {
-		var lsn uint64
-		fmt.Sscanf(*lastLSN, "%X", &lsn)
+		lsn, err := parseLSN(*lastLSN)
+		if err != nil {
+			return nil, fmt.Errorf("parse replay cursor LSN: %w", err)
+		}
 		sess.LastProcessedLSN = &lsn
 	}
 
@@ -163,4 +171,21 @@ func (s *Service) List(ctx context.Context, sourceID string) ([]*Session, error)
 		sessions = append(sessions, &s)
 	}
 	return sessions, nil
+}
+
+func parseLSN(value string) (uint64, error) {
+	high, low, ok := strings.Cut(value, "/")
+	if !ok || high == "" || low == "" {
+		return 0, fmt.Errorf("invalid LSN %q", value)
+	}
+
+	highValue, err := strconv.ParseUint(high, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("parse LSN high value: %w", err)
+	}
+	lowValue, err := strconv.ParseUint(low, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("parse LSN low value: %w", err)
+	}
+	return highValue<<32 | lowValue, nil
 }

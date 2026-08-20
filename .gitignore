@@ -9,3 +9,4 @@ dashboard/out/
 .env.*.local
 tools/
 build.log
+dashboard/*.tsbuildinfo

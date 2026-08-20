@@ -2,26 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { CircleAlert, Database, Server } from 'lucide-react'
-
-interface Source {
-  id: string
-  name: string
-  status: string
-  replication_slot: string
-  created_at: string
-}
+import { useSearchParams } from 'next/navigation'
+import { getDashboardData, resolveMode, SourceRecord } from '../../lib/dashboard-data'
 
 export default function SourcesPage() {
-  const [sources, setSources] = useState<Source[]>([])
+  const searchParams = useSearchParams()
+  const mode = resolveMode(searchParams.get('mode'))
+  const [sources, setSources] = useState<SourceRecord[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
     async function loadSources() {
       try {
-        const response = await fetch('/api/v1/sources', { cache: 'no-store' })
-        if (!response.ok) throw new Error('Unable to load sources')
-        const data = await response.json() as { sources: Source[] | null }
-        setSources(data.sources ?? [])
+        const data = await getDashboardData(mode)
+        setSources(data.sources)
         setError('')
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Unable to load sources')
@@ -29,7 +23,7 @@ export default function SourcesPage() {
     }
 
     void loadSources()
-  }, [])
+  }, [mode])
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -40,7 +34,7 @@ export default function SourcesPage() {
             Capture topology
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-50">Sources</h1>
-          <p className="mt-1 text-sm text-slate-500">Registered PostgreSQL publishers and replication slots</p>
+            <p className="mt-1 text-sm text-slate-500">{mode === 'demo' ? 'Deterministic publisher and slot evidence' : 'Registered PostgreSQL publishers and replication slots'}</p>
         </div>
         <span className="hidden rounded-md border border-[#34445e] px-3 py-2 text-xs text-slate-500 sm:block">Registration via API</span>
       </header>

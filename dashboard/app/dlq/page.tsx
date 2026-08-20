@@ -2,27 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { CircleAlert, ShieldAlert } from 'lucide-react'
-
-interface DLQEntry {
-  id: number
-  event_id: string
-  source_id: string
-  failure_reason: string
-  status: string
-  created_at: string
-}
+import { useSearchParams } from 'next/navigation'
+import { DLQRecord, getDashboardData, resolveMode } from '../../lib/dashboard-data'
 
 export default function DLQPage() {
-  const [entries, setEntries] = useState<DLQEntry[]>([])
+  const searchParams = useSearchParams()
+  const mode = resolveMode(searchParams.get('mode'))
+  const [entries, setEntries] = useState<DLQRecord[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
     async function loadDLQ() {
       try {
-        const response = await fetch('/api/v1/dlq', { cache: 'no-store' })
-        if (!response.ok) throw new Error('Unable to load dead letters')
-        const data = await response.json() as { entries: DLQEntry[] | null }
-        setEntries(data.entries ?? [])
+        const data = await getDashboardData(mode)
+        setEntries(data.dlqEntries)
         setError('')
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Unable to load dead letters')
@@ -30,7 +23,7 @@ export default function DLQPage() {
     }
 
     void loadDLQ()
-  }, [])
+  }, [mode])
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -40,7 +33,7 @@ export default function DLQPage() {
           Failure handling
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-50">Dead letter queue</h1>
-        <p className="mt-1 text-sm text-slate-500">Events that exhausted delivery attempts and require operator review</p>
+        <p className="mt-1 text-sm text-slate-500">{mode === 'demo' ? 'Representative exhausted delivery for reliability review' : 'Events that exhausted delivery attempts and require operator review'}</p>
       </header>
 
       {error && <p className="flex items-center gap-2 text-sm text-amber-200"><CircleAlert aria-hidden="true" className="h-4 w-4" />{error}</p>}
