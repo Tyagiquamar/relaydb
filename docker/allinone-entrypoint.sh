@@ -65,9 +65,14 @@ export RELAYDB_READER_KEY_ID="${RELAYDB_READER_KEY_ID:-reader}"
 export RELAYDB_READER_KEY="${RELAYDB_READER_KEY:?RELAYDB_READER_KEY is required}"
 export RELAYDB_MASTER_KEY="${RELAYDB_MASTER_KEY:-MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}"
 
-RELAYDB_SERVICE=api /api &
-RELAYDB_SERVICE=capture RELAYDB_CAPTURE_OWNER_ID=capture-1 RELAYDB_METRICS_ADDR=:2112 /capture &
-RELAYDB_SERVICE=delivery RELAYDB_METRICS_ADDR=:2113 /delivery &
+# Start api first and let it apply embedded migrations before the others
+# connect (avoids a CREATE TABLE race on schema_migrations when all three
+# processes start at once against a fresh database).
+RELAYDB_SERVICE=api /bin/api &
+API_PID=$!
+sleep 3
+RELAYDB_SERVICE=capture RELAYDB_CAPTURE_OWNER_ID=capture-1 RELAYDB_METRICS_ADDR=:2112 /bin/capture &
+RELAYDB_SERVICE=delivery RELAYDB_METRICS_ADDR=:2113 /bin/delivery &
 
 # Exit (and let the platform restart the container) when any component dies.
 wait -n
