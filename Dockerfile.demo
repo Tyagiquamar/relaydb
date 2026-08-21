@@ -27,5 +27,6 @@ RUN chmod +x /allinone-entrypoint.sh
 # Reset inherited Postgres EXPOSE metadata (5432) so free-tier port detection
 # sees only the app port. The platform entrypoint overrides the postgres image
 # entrypoint and starts postgres itself before launching the RelayDB services.
+ENV RELAYDB_HTTP_ADDR=:8080
 EXPOSE 8080
 ENTRYPOINT ["/allinone-entrypoint.sh"]
