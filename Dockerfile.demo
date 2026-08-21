@@ -24,9 +24,7 @@ COPY examples/commerce/seed.sql /seed/commerce-seed.sql
 COPY docker/allinone-entrypoint.sh /allinone-entrypoint.sh
 RUN chmod +x /allinone-entrypoint.sh
 
-# Reset inherited Postgres EXPOSE metadata (5432) so free-tier port detection
-# sees only the app port. The platform entrypoint overrides the postgres image
-# entrypoint and starts postgres itself before launching the RelayDB services.
-ENV RELAYDB_HTTP_ADDR=:8080
-EXPOSE 8080
+# App listens on 5432 (the port SnapDeploy's edge routes to); Postgres runs on 5433 internally.
+ENV RELAYDB_HTTP_ADDR=:5432
+EXPOSE 5432
 ENTRYPOINT ["/allinone-entrypoint.sh"]

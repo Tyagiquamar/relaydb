@@ -21,12 +21,13 @@ fi
 su-exec postgres postgres -D "$PGDATA" \
   -c config_file=/etc/postgresql/postgresql.conf \
   -c hba_file=/etc/postgresql/pg_hba.conf \
-  -c listen_addresses=localhost &
+  -c listen_addresses=localhost \
+  -c port=5433 &
 
-until su-exec postgres pg_isready -q -h localhost; do sleep 0.2; done
+until su-exec postgres pg_isready -q -h localhost -p 5433; do sleep 0.2; done
 
 # Role and databases (idempotent).
-su-exec postgres psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+su-exec postgres psql -h localhost -p 5433 -U postgres -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'relaydb') THEN
@@ -36,26 +37,27 @@ END
 $$;
 SQL
 
-su-exec postgres psql -h localhost -U postgres -tAc \
+su-exec postgres psql -h localhost -p 5433 -U postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname='commerce'" | grep -q 1 \
-  || su-exec postgres createdb -h localhost -U postgres -O relaydb commerce
+  || su-exec postgres createdb -h localhost -p 5433 -U postgres -O relaydb commerce
 
-su-exec postgres psql -h localhost -U postgres -tAc \
+su-exec postgres psql -h localhost -p 5433 -U postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname='relaydb'" | grep -q 1 \
-  || su-exec postgres createdb -h localhost -U postgres -O relaydb relaydb
+  || su-exec postgres createdb -h localhost -p 5433 -U postgres -O relaydb relaydb
 
 # Seed the commerce source once (creates tables + relaydb_pub publication).
-if ! su-exec postgres psql -h localhost -U postgres -d commerce -tAc \
+if ! su-exec postgres psql -h localhost -p 5433 -U postgres -d commerce -tAc \
   "SELECT 1 FROM pg_publication WHERE pubname='relaydb_pub'" | grep -q 1; then
-  su-exec postgres psql -h localhost -U postgres -d commerce -v ON_ERROR_STOP=1 \
+  su-exec postgres psql -h localhost -p 5433 -U postgres -d commerce -v ON_ERROR_STOP=1 \
     -f /seed/commerce-seed.sql
 fi
 
 # --- RelayDB services ---------------------------------------------------------
 # The api binary applies embedded metadata migrations on startup.
-export RELAYDB_METADATA_DB_URL="${RELAYDB_METADATA_DB_URL:-postgres://relaydb:relaydb@localhost:5432/relaydb?sslmode=disable}"
-export RELAYDB_SOURCE_DB_URL="${RELAYDB_SOURCE_DB_URL:-postgres://relaydb:relaydb@localhost:5432/commerce?replication=database}"
-export RELAYDB_HTTP_ADDR="${RELAYDB_HTTP_ADDR:-:${PORT:-8080}}"
+export RELAYDB_METADATA_DB_URL="${RELAYDB_METADATA_DB_URL:-postgres://relaydb:relaydb@localhost:5433/relaydb?sslmode=disable}"
+export RELAYDB_SOURCE_DB_URL="${RELAYDB_SOURCE_DB_URL:-postgres://relaydb:relaydb@localhost:5433/commerce?replication=database}"
+# App listens on the port the platform edge routes to (5432); Postgres moved to 5433.
+export RELAYDB_HTTP_ADDR="${RELAYDB_HTTP_ADDR:-:5432}"
 export RELAYDB_GRPC_ADDR="${RELAYDB_GRPC_ADDR:-:9090}"
 export RELAYDB_ADMIN_KEY_ID="${RELAYDB_ADMIN_KEY_ID:-admin}"
 export RELAYDB_ADMIN_KEY="${RELAYDB_ADMIN_KEY:?RELAYDB_ADMIN_KEY is required}"
