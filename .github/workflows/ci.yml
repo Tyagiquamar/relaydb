@@ -2,6 +2,12 @@ name: CI
 
 on:
   push:
+    branches: [main, master]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
   workflow_dispatch:
 
 concurrency:
