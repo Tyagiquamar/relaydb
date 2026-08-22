@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -52,8 +53,8 @@ func init() {
 		BuildInfo,
 		HTTPRequestsTotal,
 		HTTPRequestDuration,
-		prometheus.NewGoCollector(),
-		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 }
 
@@ -84,16 +85,16 @@ func Logger() *slog.Logger {
 func HealthHandler(checkReady func() bool) (live, ready http.Handler) {
 	live = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status":"alive"}`)
+		_, _ = fmt.Fprintln(w, `{"status":"alive"}`)
 	})
 	ready = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if checkReady == nil || !checkReady() {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintln(w, `{"status":"not ready"}`)
+			_, _ = fmt.Fprintln(w, `{"status":"not ready"}`)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, `{"status":"ready"}`)
+		_, _ = fmt.Fprintln(w, `{"status":"ready"}`)
 	})
 	return live, ready
 }

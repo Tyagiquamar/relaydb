@@ -28,13 +28,13 @@ func main() {
 	// Connect to source database
 	conn, err := pgx.Connect(context.Background(), cfg.SourceDBURL)
 	if err != nil {
-		log.Fatalf("connect to source: %v", err)
+		log.Fatalf("connect to source: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	// Create tables if not exist (idempotent)
 	if err := createSchema(conn); err != nil {
-		log.Fatalf("create schema: %v", err)
+		log.Fatalf("create schema: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 
 	// Start HTTP server for order API
@@ -86,7 +86,7 @@ func runTrafficLoop(conn *pgx.Conn, every time.Duration) {
 		productID := int64(1 + seq%2)
 		var priceCents int
 		if err := tx.QueryRow(ctx, `SELECT price_cents FROM products WHERE id = $1`, productID).Scan(&priceCents); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			continue
 		}
 		qty := 1 + seq%3
@@ -95,18 +95,18 @@ func runTrafficLoop(conn *pgx.Conn, every time.Duration) {
 		if err := tx.QueryRow(ctx,
 			`INSERT INTO orders (customer_id, total_cents) VALUES ($1, $2) RETURNING id`,
 			customerID, priceCents*qty).Scan(&orderID); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			continue
 		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO order_items (order_id, product_id, quantity, price_cents) VALUES ($1,$2,$3,$4)`,
 			orderID, productID, qty, priceCents); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			continue
 		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE products SET inventory_count = inventory_count - $1 WHERE id = $2`, qty, productID); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			continue
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -115,9 +115,9 @@ func runTrafficLoop(conn *pgx.Conn, every time.Duration) {
 
 		switch seq % 4 {
 		case 0, 1:
-			conn.Exec(ctx, `UPDATE orders SET status='paid', updated_at=now() WHERE id=$1 AND status='pending'`, orderID)
+			_, _ = conn.Exec(ctx, `UPDATE orders SET status='paid', updated_at=now() WHERE id=$1 AND status='pending'`, orderID)
 		case 2:
-			conn.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE id=$1 AND status='pending'`, orderID)
+			_, _ = conn.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE id=$1 AND status='pending'`, orderID)
 		}
 		log.Printf("traffic: order #%d lifecycle written", orderID)
 	}
@@ -219,7 +219,7 @@ func handleCreateOrder(conn *pgx.Conn) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer tx.Rollback(r.Context())
+		defer func() { _ = tx.Rollback(r.Context()) }()
 
 		var orderID int64
 		err = tx.QueryRow(r.Context(), `
@@ -235,8 +235,12 @@ func handleCreateOrder(conn *pgx.Conn) http.HandlerFunc {
 		// Add items
 		for _, item := range req.Items {
 			var price int
-			tx.QueryRow(r.Context(),
-				"SELECT price_cents FROM products WHERE id = $1", item.ProductID).Scan(&price)
+			if err := tx.QueryRow(r.Context(),
+				"SELECT price_cents FROM products WHERE id = $1", item.ProductID).Scan(&price); err != nil {
+				_ = tx.Rollback(r.Context())
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
 			_, err = tx.Exec(r.Context(), `
 				INSERT INTO order_items (order_id, product_id, quantity, price_cents)
@@ -264,7 +268,7 @@ func handleCreateOrder(conn *pgx.Conn) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"order_id":    orderID,
 			"total_cents": total,
 			"status":      "pending",
@@ -287,7 +291,7 @@ func handlePayOrder(conn *pgx.Conn) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
 	}
 }
 
@@ -300,7 +304,7 @@ func handleCancelOrder(conn *pgx.Conn) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		defer tx.Rollback(r.Context())
+		defer func() { _ = tx.Rollback(r.Context()) }()
 
 		// Get order items to restore inventory
 		rows, err := tx.Query(r.Context(), `
@@ -318,17 +322,23 @@ func handleCancelOrder(conn *pgx.Conn) http.HandlerFunc {
 		var items []item
 		for rows.Next() {
 			var i item
-			rows.Scan(&i.productID, &i.quantity)
+			if err := rows.Scan(&i.productID, &i.quantity); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			items = append(items, i)
 		}
 		rows.Close()
 
 		// Restore inventory
 		for _, i := range items {
-			tx.Exec(r.Context(), `
+			if _, err := tx.Exec(r.Context(), `
 				UPDATE products SET inventory_count = inventory_count + $1
 				WHERE id = $2
-			`, i.quantity, i.productID)
+			`, i.quantity, i.productID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		// Cancel order
@@ -347,6 +357,6 @@ func handleCancelOrder(conn *pgx.Conn) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
 	}
 }

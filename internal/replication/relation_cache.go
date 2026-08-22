@@ -110,7 +110,7 @@ func computeFingerprint(rel *Relation) string {
 	h.Write([]byte(rel.Namespace))
 	h.Write([]byte(rel.Name))
 	for _, col := range rel.Columns {
-		fmt.Fprintf(h, "%s:%d:%t:%d;", col.Name, col.TypeOID, col.Nullable, col.Position)
+		_, _ = fmt.Fprintf(h, "%s:%d:%t:%d;", col.Name, col.TypeOID, col.Nullable, col.Position)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)[:16]) // 32 hex chars
 }

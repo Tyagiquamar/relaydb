@@ -76,7 +76,9 @@ func (s *Store) Get(ctx context.Context, id int64) (*Entry, error) {
 
 	e.SinkID = sinkID
 	e.ConsumerGroupID = groupID
-	json.Unmarshal(historyJSON, &e.AttemptHistory)
+	if err := json.Unmarshal(historyJSON, &e.AttemptHistory); err != nil {
+		return nil, fmt.Errorf("decode attempt history: %w", err)
+	}
 
 	return &e, err
 }

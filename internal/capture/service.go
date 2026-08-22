@@ -112,7 +112,7 @@ func (s *Service) Run(ctx context.Context, sourceID string) error {
 			s.flushedLSN = cp.PersistedLSN
 		}
 
-		s.logger.Info("starting replication", "source", sourceID, "start_lsn", pglogrepl.LSN(startLSN).String())
+		s.logger.Info("starting replication", "source", sourceID, "start_lsn", startLSN.String())
 
 		err = s.streamOnce(ctx, startLSN)
 		if err == nil || ctx.Err() != nil {
@@ -122,7 +122,7 @@ func (s *Service) Run(ctx context.Context, sourceID string) error {
 		s.logger.Warn("replication stream ended, reconnecting",
 			"error", err,
 			"backoff", backoff,
-			"last_persisted_lsn", pglogrepl.LSN(s.flushedLSN).String(),
+			"last_persisted_lsn", s.flushedLSN.String(),
 		)
 
 		select {
@@ -195,7 +195,7 @@ func (h *captureHandler) OnMessage(ctx context.Context, msg replication.Message)
 		s.mu.Lock()
 		s.currentXID = m.Xid
 		s.mu.Unlock()
-		return 0, s.txBuffer.Begin(m.Xid, replication.LSN(m.FinalLSN))
+		return 0, s.txBuffer.Begin(m.Xid, m.FinalLSN)
 
 	case *pglogrepl.InsertMessage:
 		return 0, s.handleRowChange(m.RelationID, m.Tuple, nil, eventstore.OperationInsert)
@@ -219,7 +219,7 @@ func (h *captureHandler) OnMessage(ctx context.Context, msg replication.Message)
 			return 0, errors.New("simulated crash after commit (test hook)")
 		}
 
-		return replication.LSN(m.TransactionEndLSN), nil
+		return m.TransactionEndLSN, nil
 
 	default:
 		return 0, nil
@@ -473,7 +473,7 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (source_id, commit_end_lsn) DO UPDATE SET xid = cdc_transactions.xid
 		RETURNING id
-	`, s.sourceID, uint64(xid), pglogrepl.LSN(commitEndLSN).String(), commitTime, len(events)).Scan(&txID)
+	`, s.sourceID, uint64(xid), commitEndLSN.String(), commitTime, len(events)).Scan(&txID)
 	if err != nil {
 		return fmt.Errorf("upsert transaction: %w", err)
 	}
@@ -512,7 +512,7 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 	inserted := int(tag.RowsAffected())
 	s.logger.Debug("ingested transaction",
 		"xid", xid,
-		"commit_lsn", pglogrepl.LSN(commitEndLSN).String(),
+		"commit_lsn", commitEndLSN.String(),
 		"events", len(events),
 		"inserted", inserted,
 		"replayed", len(events)-inserted,
@@ -528,7 +528,7 @@ func (s *Service) ingestCommittedTransaction(ctx context.Context, tx pgx.Tx, xid
 		  AND owner_generation = $3
 		  AND lease_expires_at > now()
 		  AND persisted_lsn <= $4
-	`, s.sourceID, s.ownerID, s.generation, pglogrepl.LSN(commitEndLSN).String())
+	`, s.sourceID, s.ownerID, s.generation, commitEndLSN.String())
 	if err != nil {
 		return fmt.Errorf("fenced checkpoint update: %w", err)
 	}

@@ -165,12 +165,6 @@ func dlqRetry(id string) {
 	fmt.Printf("Retrying DLQ entry %s (not yet implemented)\n", id)
 }
 
-// API client methods
-func apiGet(path string) ([]byte, error) {
-	// TODO: Implement HTTP client with auth
-	return nil, fmt.Errorf("not implemented")
-}
-
 func sourceList() {
 	fmt.Println("source list not yet implemented")
 }

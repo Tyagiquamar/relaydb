@@ -590,7 +590,7 @@ func (s *Server) validateSource(ctx context.Context, connStr string) error {
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	var walLevel string
 	if err := conn.QueryRow(connCtx, "SHOW wal_level").Scan(&walLevel); err != nil {
@@ -615,7 +615,8 @@ func (s *Server) validateSource(ctx context.Context, connStr string) error {
 func (s *Server) writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	// Best-effort body write; the status code already carries the outcome.
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (s *Server) writeError(w http.ResponseWriter, status int, message string) {

@@ -43,14 +43,14 @@ func main() {
 	// Connect to metadata database
 	pool, err := persistence.NewPool(ctx, persistence.DefaultConfig(cfg.MetadataDBURL))
 	if err != nil {
-		log.Fatalf("connect to metadata db: %v", err)
+		log.Fatalf("connect to metadata db: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 	defer pool.Close()
 
 	// Run migrations
 	migrator := persistence.NewMigrator(pool)
 	if err := migrator.Migrate(ctx); err != nil {
-		log.Fatalf("migrate: %v", err)
+		log.Fatalf("migrate: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 	logger.Info("migrations applied")
 

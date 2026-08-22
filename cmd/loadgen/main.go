@@ -31,13 +31,13 @@ func main() {
 
 	conn, err := pgx.Connect(context.Background(), cfg.SourceDBURL)
 	if err != nil {
-		log.Fatalf("connect: %v", err)
+		log.Fatalf("connect: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
-	defer conn.Close(context.Background())
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	// Ensure schema
 	if err := createSchema(conn); err != nil {
-		log.Fatalf("create schema: %v", err)
+		log.Fatalf("create schema: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 
 	// Start metrics server
@@ -45,13 +45,13 @@ func main() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", telemetry.MetricsHandler())
 		mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"orders_created": atomic.LoadInt64(&ordersCreated),
 				"items_created":  atomic.LoadInt64(&itemsCreated),
 				"bytes_written":  atomic.LoadInt64(&bytesWritten),
 			})
 		})
-		http.ListenAndServe(":8082", mux)
+		_ = http.ListenAndServe(":8082", mux)
 	}()
 
 	// Run load scenarios
@@ -70,7 +70,7 @@ func main() {
 	case "burst":
 		runBurst(conn, 100000, duration)
 	default:
-		log.Fatalf("unknown scenario: %s", scenario)
+		log.Fatalf("unknown scenario: %s", scenario) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 
 	logger.Info("loadgen complete",
@@ -93,13 +93,13 @@ func runLoad(conn *pgx.Conn, writers, txPerSec, rowsPerTx int, duration time.Dur
 				if err != nil {
 					return
 				}
-				defer tx.Rollback(ctx)
+				defer func() { _ = tx.Rollback(ctx) }()
 
 				var orderID int64
 				err = tx.QueryRow(ctx, `
 					INSERT INTO orders (customer_id, total_cents)
 					VALUES ($1, $2) RETURNING id
-				`, rand.Int63n(100)+1, rand.Intn(10000)+100).Scan(&orderID)
+				`, rand.Int63n(100)+1, rand.Intn(10000)+100).Scan(&orderID) //nolint:gosec // load generator: statistical randomness only
 				if err != nil {
 					return
 				}
@@ -109,13 +109,14 @@ func runLoad(conn *pgx.Conn, writers, txPerSec, rowsPerTx int, duration time.Dur
 					_, err = tx.Exec(ctx, `
 						INSERT INTO order_items (order_id, product_id, quantity, price_cents)
 						VALUES ($1, $2, $3, $4)
-					`, orderID, rand.Int63n(10)+1, rand.Intn(5)+1, rand.Intn(1000)+10)
+					`, orderID, rand.Int63n(10)+1, rand.Intn(5)+1, rand.Intn(1000)+10) //nolint:gosec // load generator: statistical randomness only
 					if err != nil {
 						return
 					}
 					atomic.AddInt64(&itemsCreated, 1)
 				}
-				tx.Commit(ctx)
+				// Best-effort commit; failed txs simply don't count toward totals.
+				_ = tx.Commit(ctx)
 			}()
 		}
 	}
@@ -127,9 +128,9 @@ func runBurst(conn *pgx.Conn, totalRows int, duration time.Duration) {
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
-		log.Fatalf("begin: %v", err)
+		log.Fatalf("begin: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var orderID int64
 	err = tx.QueryRow(ctx, `
@@ -137,7 +138,7 @@ func runBurst(conn *pgx.Conn, totalRows int, duration time.Duration) {
 		VALUES (1, $1) RETURNING id
 	`, totalRows*100).Scan(&orderID)
 	if err != nil {
-		log.Fatalf("create order: %v", err)
+		log.Fatalf("create order: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 
 	start := time.Now()
@@ -147,7 +148,7 @@ func runBurst(conn *pgx.Conn, totalRows int, duration time.Duration) {
 			VALUES ($1, $2, 1, 100)
 		`, orderID, (i%10)+1)
 		if err != nil {
-			log.Fatalf("insert %d: %v", i, err)
+			log.Fatalf("insert %d: %v", i, err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 		}
 		if i%10000 == 0 {
 			telemetry.Info("burst progress", "rows", i, "elapsed", time.Since(start))
@@ -155,7 +156,7 @@ func runBurst(conn *pgx.Conn, totalRows int, duration time.Duration) {
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		log.Fatalf("commit: %v", err)
+		log.Fatalf("commit: %v", err) //nolint:gocritic // CLI entrypoints intentionally exit via log.Fatal; process teardown releases resources
 	}
 	telemetry.Info("burst complete", "rows", totalRows, "duration", time.Since(start))
 }

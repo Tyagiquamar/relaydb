@@ -37,7 +37,9 @@ func (m *OffsetManager) Get(ctx context.Context, groupID string, partition int) 
 
 	// Parse LSN
 	var commitLSN uint64
-	fmt.Sscanf(lsnStr, "%X", &commitLSN)
+	if _, err := fmt.Sscanf(lsnStr, "%X", &commitLSN); err != nil {
+		return nil, fmt.Errorf("parse commit LSN %q: %w", lsnStr, err)
+	}
 	offset.CommitEndLSN = commitLSN
 
 	return &offset, nil
@@ -79,7 +81,9 @@ func (m *OffsetManager) List(ctx context.Context, groupID string) ([]*Offset, er
 			&offset.SequenceNumber, &offset.LastEventID, &offset.UpdatedAt); err != nil {
 			continue
 		}
-		fmt.Sscanf(lsnStr, "%X", &offset.CommitEndLSN)
+		if _, err := fmt.Sscanf(lsnStr, "%X", &offset.CommitEndLSN); err != nil {
+			continue // skip rows whose stored LSN no longer parses
+		}
 		offsets = append(offsets, &offset)
 	}
 	return offsets, nil

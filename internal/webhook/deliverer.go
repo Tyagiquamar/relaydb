@@ -163,7 +163,7 @@ func (d *Deliverer) Deliver(ctx context.Context, del *Delivery) *Result {
 			Retryable: isRetryableError(err),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read bounded response
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -179,7 +179,7 @@ func (d *Deliverer) Deliver(ctx context.Context, del *Delivery) *Result {
 // computeSignature computes the HMAC-SHA256 signature.
 func (d *Deliverer) computeSignature(secret string, timestamp int64, eventID []byte, payload []byte) string {
 	h := hmac.New(sha256.New, []byte(secret))
-	fmt.Fprintf(h, "%d.", timestamp)
+	_, _ = fmt.Fprintf(h, "%d.", timestamp)
 	h.Write(eventID)
 	h.Write(payload)
 	return "sha256=" + hex.EncodeToString(h.Sum(nil))

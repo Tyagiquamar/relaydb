@@ -43,7 +43,7 @@ func (h *Hasher) hash(key string) uint32 {
 // hashBytes computes FNV-1a hash of bytes.
 func (h *Hasher) hashBytes(key []byte) uint32 {
 	h2 := fnv.New32a()
-	h2.Write(key)
+	_, _ = h2.Write(key)
 	return h2.Sum32()
 }
 

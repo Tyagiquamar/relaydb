@@ -1,5 +1,7 @@
 # RelayDB
 
+![CI](https://github.com/Tyagiquamar/relaydb/actions/workflows/ci.yml/badge.svg)
+
 RelayDB is an inspectable PostgreSQL change-data-capture project written in Go.
 It reads PostgreSQL logical replication, persists normalized changes with a
 durable WAL checkpoint, and exposes an operations dashboard for examining
@@ -137,10 +139,17 @@ pnpm --dir dashboard exec tsc --noEmit
 pnpm --dir dashboard build
 ```
 
-Integration coverage lives under `tests/integration`: real logical replication
-against throwaway PostgreSQL via testcontainers (requires Docker). A dedicated
-failure-scene suite is planned next; do not treat the current tests as a
-production certification.
+GitHub Actions runs the full validation on every push and PR to main: Go vet +
+tests, the race detector, golangci-lint, dashboard typecheck/build, and both
+Docker image builds. The same commands reproduce locally.
+
+Integration coverage lives under 	ests/integration: real logical replication
+against throwaway PostgreSQL via testcontainers (requires Docker), including a
+crash-replay idempotency scene and checkpoint fencing. Webhook delivery failure
+scenes cover destination failure with retry/backoff, recovery to a successful
+delivery, and dead-lettering after exhausted retries. True process-kill scenes
+for capture/delivery binaries remain future work; do not treat the current
+tests as a production certification.
 
 ## Capability Boundary
 

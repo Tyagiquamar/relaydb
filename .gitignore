@@ -10,3 +10,4 @@ dashboard/out/
 tools/
 build.log
 *.tsbuildinfo
+*.exe

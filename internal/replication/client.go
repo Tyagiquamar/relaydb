@@ -99,7 +99,7 @@ func (c *Client) Stream(ctx context.Context, startLSN LSN, handler Handler) erro
 	defer func() {
 		c.connMu.Lock()
 		if c.conn != nil {
-			c.conn.Close(context.Background())
+			_ = c.conn.Close(context.Background())
 			c.conn = nil
 		}
 		c.connMu.Unlock()
@@ -152,8 +152,8 @@ func (c *Client) connLoop(ctx context.Context, sysident pglogrepl.IdentifySystem
 		case <-c.doneCh:
 			return
 		case <-ticker.C:
-			// Send periodic status update
-			c.sendStatusUpdate(ctx)
+			// Send periodic status update; failures are surfaced by the next receive.
+			_ = c.sendStatusUpdate(ctx)
 		}
 	}
 }
@@ -176,8 +176,8 @@ func (c *Client) receiveLoop(ctx context.Context, sysident pglogrepl.IdentifySys
 
 		if err != nil {
 			if pgconn.Timeout(err) {
-				// Timeout - send status update and continue
-				c.sendStatusUpdate(ctx)
+				// Timeout - send status update and continue.
+				_ = c.sendStatusUpdate(ctx)
 				continue
 			}
 			if _, _, ok := pglogrepl.IsErrEndTimeline(err); ok {

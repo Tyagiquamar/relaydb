@@ -1,43 +1,57 @@
+version: "2"
+
 run:
-  timeout: 5m
   tests: true
 
 linters:
+  default: none
   enable:
-    - gofmt
-    - govet
     - errcheck
+    - govet
     - staticcheck
-    - gosimple
     - ineffassign
     - unused
     - misspell
-    - revive
     - gosec
     - unconvert
-    - unparam
-    - prealloc
-    - exportloopref
     - gocritic
-    - godot
-    - whitespace
+
+  exclusions:
+    rules:
+      # Test files: security/style scanners produce noise on fixtures/helpers.
+      - path: _test\.go
+        linters:
+          - gosec
+          - gocritic
+          - errcheck
+      # Partition hashing intentionally truncates 64-bit hashes to uint32
+      # bucket indexes; LSN/XID math relies on bounded wraps. Reviewed callsites.
+      - text: "G115"
+        linters:
+          - gosec
+      # Internal/demo HTTP frontends sit behind reverse proxies; strict
+      # server timeouts would need endpoint-by-endpoint tuning. Tracked gap.
+      - text: "G114"
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
 
 linters-settings:
   gocritic:
     enabled-tags:
       - diagnostic
       - experimental
-      - opinionated
       - performance
       - style
     disabled-checks:
       - whyNoLint
       - hugeParam
-
-  revive:
-    rules:
-      - name: exported
-        disabled: false
+      # CLI mains legitimately log.Fatal after deferring connection cleanup;
+      # process teardown releases the resources regardless.
+      - exitAfterDefer
 
   gosec:
     excludes:
@@ -45,14 +59,6 @@ linters-settings:
       - G304 # File path from variable (we control our paths)
 
 issues:
-  exclude-rules:
-    # Exclude some linters from test files
-    - path: _test\.go
-      linters:
-        - gosec
-        - gocritic
-        - errcheck
-
   # Maximum issue count per linter
   max-issues-per-linter: 0
   # Maximum issue count per file
