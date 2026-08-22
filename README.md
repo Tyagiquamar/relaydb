@@ -143,7 +143,7 @@ GitHub Actions runs the full validation on every push and PR to main: Go vet +
 tests, the race detector, golangci-lint, dashboard typecheck/build, and both
 Docker image builds. The same commands reproduce locally.
 
-Integration coverage lives under 	ests/integration: real logical replication
+Integration coverage lives under tests/integration: real logical replication
 against throwaway PostgreSQL via testcontainers (requires Docker), including a
 crash-replay idempotency scene and checkpoint fencing. Webhook delivery failure
 scenes cover destination failure with retry/backoff, recovery to a successful

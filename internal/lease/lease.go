@@ -106,3 +106,26 @@ func (m *Manager) Validate(ctx context.Context, groupID string, partition int, o
 	`, groupID, partition, owner, generation).Scan(&valid)
 	return valid, err
 }
+
+// ValidateForUpdate is the transaction-aware form of Validate: it must be run
+// inside an open transaction. It checks that the partition lease is currently
+// held by owner/generation and takes FOR UPDATE on the lease row until that
+// transaction commits or rolls back. A concurrent takeover therefore cannot
+// interleave between this check and any dependent write performed later in
+// the same transaction (fencing TOCTOU fix).
+func (m *Manager) ValidateForUpdate(ctx context.Context, tx pgx.Tx, groupID string, partition int, owner string, generation int64) (bool, error) {
+	var valid bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM partition_leases
+			WHERE group_id = $1 AND partition = $2
+			  AND lease_owner = $3 AND lease_generation = $4
+			  AND lease_expires_at > now()
+			FOR UPDATE
+		)
+	`, groupID, partition, owner, generation).Scan(&valid)
+	if err != nil {
+		return false, fmt.Errorf("lock lease: %w", err)
+	}
+	return valid, nil
+}

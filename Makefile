@@ -12,8 +12,8 @@ test:
 race:
 	$(GO) test -race ./...
 
-# Local pre-push ritual (CI replacement): vet + full suite including the
-# end-to-end WAL proof (~35s, needs Docker).
+# Local equivalent of the core CI verification: vet + full suite including
+# the end-to-end WAL proof (~35s, needs Docker).
 verify:
 	$(GO) vet ./...
 	$(GO) test -count=1 ./...

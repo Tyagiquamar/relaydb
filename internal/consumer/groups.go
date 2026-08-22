@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pglogrepl"
 	"github.com/tyagiquamar/relaydb/internal/eventstore"
 	"github.com/tyagiquamar/relaydb/internal/lease"
 	"github.com/tyagiquamar/relaydb/internal/partition"
@@ -128,37 +129,46 @@ func (s *Service) Heartbeat(ctx context.Context, groupID string, partition int, 
 }
 
 // Ack acknowledges events up to a position.
+// Lease validation and offset advancement happen inside ONE transaction: the
+// lease row is locked FOR UPDATE first, so a concurrent takeover cannot
+// interleave between validation and the offset write (fencing TOCTOU fix).
 func (s *Service) Ack(ctx context.Context, groupID string, partition int, owner string, generation int64, commitLSN uint64, sequence int, lastEventID []byte) error {
-	// Validate lease
-	valid, err := s.leaseMgr.Validate(ctx, groupID, partition, owner, generation)
-	if err != nil {
-		return fmt.Errorf("validate lease: %w", err)
-	}
-	if !valid {
-		return fmt.Errorf("stale lease: generation mismatch or expired")
-	}
+	return persistence.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
+		// Lock and validate the lease. If a newer owner has taken over (or
+		// the lease expired), this fails and the offset is never touched.
+		valid, err := s.leaseMgr.ValidateForUpdate(ctx, tx, groupID, partition, owner, generation)
+		if err != nil {
+			return err
+		}
+		if !valid {
+			return fmt.Errorf("stale lease: generation mismatch or expired")
+		}
 
-	// Update offset with fencing
-	result, err := s.pool.Exec(ctx, `
-		INSERT INTO consumer_offsets (group_id, partition, commit_end_lsn, sequence_number, last_event_id)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (group_id, partition) DO UPDATE
-		SET commit_end_lsn = $3,
-		    sequence_number = $4,
-		    last_event_id = $5,
-		    updated_at = now()
-		WHERE consumer_offsets.commit_end_lsn < $3
-		   OR (consumer_offsets.commit_end_lsn = $3 AND consumer_offsets.sequence_number < $4)
-	`, groupID, partition, commitLSN, sequence, lastEventID)
+		// Advance the offset while lease ownership is protected by this
+		// transaction. Monotonic guard: newer LSN wins; on equal LSN a larger
+		// sequence number wins; regressions are rejected. The LSN is staged
+		// as text with ::pg_lsn casts because pgx cannot encode a raw Go
+		// uint64 as pg_lsn in text format (same workaround capture uses).
+		result, err := tx.Exec(ctx, `
+			INSERT INTO consumer_offsets (group_id, partition, commit_end_lsn, sequence_number, last_event_id)
+			VALUES ($1, $2, $3::pg_lsn, $4, $5)
+			ON CONFLICT (group_id, partition) DO UPDATE
+			SET commit_end_lsn = $3::pg_lsn,
+			    sequence_number = $4,
+			    last_event_id = $5,
+			    updated_at = now()
+			WHERE consumer_offsets.commit_end_lsn < $3::pg_lsn
+			   OR (consumer_offsets.commit_end_lsn = $3::pg_lsn AND consumer_offsets.sequence_number < $4)
+		`, groupID, partition, pglogrepl.LSN(commitLSN).String(), sequence, lastEventID)
+		if err != nil {
+			return fmt.Errorf("ack: %w", err)
+		}
+		if result.RowsAffected() == 0 {
+			return fmt.Errorf("offset regression rejected")
+		}
 
-	if err != nil {
-		return fmt.Errorf("ack: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("offset regression rejected")
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // Nack negatively acknowledges events for redelivery.
@@ -181,17 +191,9 @@ func (s *Service) Nack(ctx context.Context, groupID string, partition int, owner
 			return fmt.Errorf("load consumer group: %w", err)
 		}
 
-		var valid bool
-		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS(
-				SELECT 1 FROM partition_leases
-				WHERE group_id = $1 AND partition = $2
-				  AND lease_owner = $3 AND lease_generation = $4
-				  AND lease_expires_at > now()
-				FOR UPDATE
-			)
-		`, groupID, partition, owner, generation).Scan(&valid); err != nil {
-			return fmt.Errorf("lock lease: %w", err)
+		valid, err := s.leaseMgr.ValidateForUpdate(ctx, tx, groupID, partition, owner, generation)
+		if err != nil {
+			return err
 		}
 		if !valid {
 			return fmt.Errorf("stale lease")

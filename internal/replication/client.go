@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pglogrepl"
@@ -14,26 +12,27 @@ import (
 )
 
 // Client manages a logical replication connection.
-// The connection is owned by a single goroutine (KTD-13).
+//
+// Ownership (KTD-13): *pgconn.PgConn is not safe for concurrent use, so
+// exactly one goroutine — the one calling Stream — owns the connection for its
+// entire lifetime. That goroutine serially performs every operation on it:
+// ReceiveMessage, XLogData processing, keepalive handling, and standby status
+// updates (periodic via the receive timeout and immediate on ReplyRequested).
+// No second goroutine ever touches the replication connection.
 type Client struct {
 	config Config
 
-	// Connection (owned by conn goroutine)
-	conn   *pgconn.PgConn
-	connMu sync.Mutex // Protects conn state changes
+	// conn is created, used, and closed entirely by the Stream goroutine.
+	conn *pgconn.PgConn
 
-	// State
-	receivedLSN LSN // Written only by the receive loop
+	// receivedLSN is the last WAL position observed on the wire. It is never
+	// acknowledged. Written and read only by the Stream goroutine.
+	receivedLSN LSN
 
-	// flushedLSN is the last handler-confirmed flush position. It is written
-	// by the receive loop after OnMessage and read by sendStatusUpdate, which
-	// runs on both the receive loop and the connection loop, so every access
-	// goes through the atomic.
-	flushedLSN atomic.Uint64
-
-	// Channels for communication with conn goroutine
-	errCh  chan error
-	doneCh chan struct{}
+	// flushedLSN is the last handler-confirmed durable position. It is the
+	// only LSN reported in standby status updates (KTD-3: never report a
+	// received-only position). Owned exclusively by the Stream goroutine.
+	flushedLSN LSN
 
 	// Message handler
 	handler Handler
@@ -65,11 +64,7 @@ type Handler interface {
 
 // NewClient creates a replication client.
 func NewClient(cfg Config) *Client {
-	return &Client{
-		config: cfg,
-		errCh:  make(chan error, 1),
-		doneCh: make(chan struct{}),
-	}
+	return &Client{config: cfg}
 }
 
 // Stream starts the replication stream.
@@ -92,22 +87,17 @@ func (c *Client) Stream(ctx context.Context, startLSN LSN, handler Handler) erro
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	c.connMu.Lock()
 	c.conn = conn
-	c.connMu.Unlock()
 
 	defer func() {
-		c.connMu.Lock()
 		if c.conn != nil {
 			_ = c.conn.Close(context.Background())
 			c.conn = nil
 		}
-		c.connMu.Unlock()
 	}()
 
-	// Identify system
-	sysident, err := pglogrepl.IdentifySystem(ctx, conn)
-	if err != nil {
+	// Identify system (verifies the replication handshake end-to-end)
+	if _, err := pglogrepl.IdentifySystem(ctx, conn); err != nil {
 		return fmt.Errorf("identify system: %w", err)
 	}
 
@@ -132,34 +122,16 @@ func (c *Client) Stream(ctx context.Context, startLSN LSN, handler Handler) erro
 		return fmt.Errorf("start replication: %w", err)
 	}
 
-	// Start connection-owning goroutine
-	go c.connLoop(ctx, sysident)
-
-	// Main receive loop
-	return c.receiveLoop(ctx, sysident)
+	// Run the connection-owning loop on this goroutine. Everything from here
+	// on (receive, decode, handler dispatch, status updates) is serialized.
+	return c.receiveLoop(ctx)
 }
 
-// connLoop owns the replication connection.
-// It handles standby status updates and keepalive replies.
-func (c *Client) connLoop(ctx context.Context, sysident pglogrepl.IdentifySystemResult) {
-	ticker := time.NewTicker(c.config.StandbyTimeout)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-c.doneCh:
-			return
-		case <-ticker.C:
-			// Send periodic status update; failures are surfaced by the next receive.
-			_ = c.sendStatusUpdate(ctx)
-		}
-	}
-}
-
-// receiveLoop receives messages from the replication stream.
-func (c *Client) receiveLoop(ctx context.Context, sysident pglogrepl.IdentifySystemResult) error {
+// receiveLoop owns the replication connection for the duration of the stream.
+// It serially receives messages, processes XLogData and keepalives, and sends
+// standby status updates. An idle receive window of StandbyTimeout doubles as
+// the periodic status update interval, so no second goroutine is needed.
+func (c *Client) receiveLoop(ctx context.Context) error {
 	decoder := NewDecoder(NewRelationCache())
 
 	for {
@@ -169,15 +141,20 @@ func (c *Client) receiveLoop(ctx context.Context, sysident pglogrepl.IdentifySys
 		default:
 		}
 
-		// Receive with timeout
+		// Receive with timeout. On deadline expiry pgconn only sets a socket
+		// read deadline — the connection stays usable — so we can send the
+		// periodic standby status update and continue receiving on the same
+		// goroutine.
 		ctxTimeout, cancel := context.WithTimeout(ctx, c.config.StandbyTimeout)
 		rawMsg, err := c.conn.ReceiveMessage(ctxTimeout)
 		cancel()
 
 		if err != nil {
 			if pgconn.Timeout(err) {
-				// Timeout - send status update and continue.
-				_ = c.sendStatusUpdate(ctx)
+				// Idle for a full StandbyTimeout: report progress.
+				if err := c.sendStatusUpdate(ctx); err != nil {
+					return fmt.Errorf("send status update: %w", err)
+				}
 				continue
 			}
 			if _, _, ok := pglogrepl.IsErrEndTimeline(err); ok {
@@ -234,15 +211,17 @@ func (c *Client) handleXLogData(ctx context.Context, data []byte, decoder *Decod
 		return err
 	}
 
-	// Update flushed LSN if provided
+	// Update flushed LSN only after the handler confirms persistence
 	if flushLSN > 0 {
-		c.flushedLSN.Store(uint64(flushLSN))
+		c.flushedLSN = flushLSN
 	}
 
 	return nil
 }
 
-// handleKeepalive processes keepalive messages.
+// handleKeepalive processes keepalive messages. When a reply is requested —
+// by the server or the handler — the standby status update is sent right
+// here, on the connection-owning goroutine.
 func (c *Client) handleKeepalive(ctx context.Context, data []byte) error {
 	keepalive, err := pglogrepl.ParsePrimaryKeepaliveMessage(data)
 	if err != nil {
@@ -259,26 +238,21 @@ func (c *Client) handleKeepalive(ctx context.Context, data []byte) error {
 
 // sendStatusUpdate sends a standby status update.
 // Only reports flushed LSN (KTD-3: never report received-only LSN).
+// Must only be called from the connection-owning goroutine.
 func (c *Client) sendStatusUpdate(ctx context.Context) error {
-	c.connMu.Lock()
-	conn := c.conn
-	c.connMu.Unlock()
-
-	if conn == nil {
+	if c.conn == nil {
 		return fmt.Errorf("no connection")
 	}
 
-	flushed := LSN(c.flushedLSN.Load())
-
 	update := pglogrepl.StandbyStatusUpdate{
-		WALWritePosition: flushed,
-		WALFlushPosition: flushed,
-		WALApplyPosition: flushed,
+		WALWritePosition: c.flushedLSN,
+		WALFlushPosition: c.flushedLSN,
+		WALApplyPosition: c.flushedLSN,
 		ClientTime:       time.Now(),
 		ReplyRequested:   false,
 	}
 
-	return pglogrepl.SendStandbyStatusUpdate(ctx, conn, update)
+	return pglogrepl.SendStandbyStatusUpdate(ctx, c.conn, update)
 }
 
 // isDuplicateObject checks if the error is "already exists".
