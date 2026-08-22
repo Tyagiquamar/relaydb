@@ -49,7 +49,7 @@ func TestTransactionBuffer_BasicFlow(t *testing.T) {
 
 	// Check sequence numbers
 	if events[0].SequenceNumber != 1 || events[1].SequenceNumber != 2 {
-		t.Errorf("sequence numbers = %d, %d, want 1, 2", 
+		t.Errorf("sequence numbers = %d, %d, want 1, 2",
 			events[0].SequenceNumber, events[1].SequenceNumber)
 	}
 

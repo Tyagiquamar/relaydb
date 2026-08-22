@@ -12,18 +12,18 @@ import (
 
 // Sink represents a webhook sink.
 type Sink struct {
-	ID          string
-	Name        string
-	Description string
-	URL         string
-	SourceID    *string
-	SchemaFilter string
-	TableFilter  string
+	ID              string
+	Name            string
+	Description     string
+	URL             string
+	SourceID        *string
+	SchemaFilter    string
+	TableFilter     string
 	OperationFilter string
-	MaxAttempts int
-	Enabled     bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	MaxAttempts     int
+	Enabled         bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Registry manages webhook sinks.

@@ -32,8 +32,8 @@ type Client struct {
 	flushedLSN atomic.Uint64
 
 	// Channels for communication with conn goroutine
-	errCh    chan error
-	doneCh   chan struct{}
+	errCh  chan error
+	doneCh chan struct{}
 
 	// Message handler
 	handler Handler
@@ -41,12 +41,12 @@ type Client struct {
 
 // Config holds replication client configuration.
 type Config struct {
-	DatabaseURL        string
-	SlotName           string
-	Publication        string
-	StandbyTimeout     time.Duration
-	RetryInitialDelay  time.Duration
-	RetryMaxDelay      time.Duration
+	DatabaseURL       string
+	SlotName          string
+	Publication       string
+	StandbyTimeout    time.Duration
+	RetryInitialDelay time.Duration
+	RetryMaxDelay     time.Duration
 }
 
 // Handler receives decoded messages.

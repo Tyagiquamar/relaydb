@@ -55,8 +55,8 @@ func (m *OffsetManager) Set(ctx context.Context, offset *Offset) error {
 		    sequence_number = $4,
 		    last_event_id = $5,
 		    updated_at = now()
-	`, offset.GroupID, offset.Partition, 
-	   fmt.Sprintf("%X", offset.CommitEndLSN), offset.SequenceNumber, offset.LastEventID)
+	`, offset.GroupID, offset.Partition,
+		fmt.Sprintf("%X", offset.CommitEndLSN), offset.SequenceNumber, offset.LastEventID)
 	return err
 }
 

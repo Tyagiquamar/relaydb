@@ -84,10 +84,14 @@ func (e *Envelope) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
 
 	// Build envelope: [version][key_id][wrapped_dek_len:2][wrapped_dek][ciphertext]
 	envelope := make([]byte, 0, 4+len(wrappedDEK)+len(ciphertext))
-	envelope = append(envelope, EnvelopeVersion, e.keyID)
-	envelope = append(envelope, byte(len(wrappedDEK)>>8), byte(len(wrappedDEK)))
-	envelope = append(envelope, wrappedDEK...)
-	envelope = append(envelope, ciphertext...)
+	envelope = append(envelope,
+		EnvelopeVersion, e.keyID,
+		byte(len(wrappedDEK)>>8), byte(len(wrappedDEK)),
+	)
+	// Go permits only one variadic expansion per append call and it must be
+	// last, so the wrapped DEK and ciphertext segments cannot merge further.
+	envelope = append(envelope, wrappedDEK...) //nolint:gocritic // see above
+	envelope = append(envelope, ciphertext...) //nolint:gocritic // see above
 
 	return envelope, nil
 }

@@ -93,7 +93,7 @@ func (d *Decoder) DecodeTuple(rel *Relation, tuple *pglogrepl.TupleData) ([]Tupl
 	}
 
 	if len(tuple.Columns) > len(rel.Columns) {
-		return nil, fmt.Errorf("tuple has %d columns, relation has %d", 
+		return nil, fmt.Errorf("tuple has %d columns, relation has %d",
 			len(tuple.Columns), len(rel.Columns))
 	}
 

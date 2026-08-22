@@ -25,14 +25,14 @@ type Config struct {
 	SourceName  string // name of the sources row this capture instance owns
 
 	// Replication settings
-	ReplicationSlot    string
-	Publication        string
+	ReplicationSlot       string
+	Publication           string
 	StandbyMessageTimeout time.Duration
 
 	// Capture ownership lease
-	CaptureOwnerID     string
-	LeaseDuration      time.Duration
-	HeartbeatInterval  time.Duration
+	CaptureOwnerID    string
+	LeaseDuration     time.Duration
+	HeartbeatInterval time.Duration
 
 	// Consumer settings
 	MaxPollBatchSize int
@@ -43,7 +43,7 @@ type Config struct {
 	WebhookMaxAttempts int
 
 	// Observability
-	MetricsAddr string
+	MetricsAddr  string
 	OTLPEndpoint string // empty disables OTLP
 
 	// Crypto

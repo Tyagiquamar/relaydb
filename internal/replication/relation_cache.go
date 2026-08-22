@@ -11,7 +11,7 @@ import (
 // RelationCache caches relation metadata for decoding.
 // Keyed by relation OID; replaced when new Relation message arrives.
 type RelationCache struct {
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	relations map[uint32]*Relation
 }
 
@@ -119,7 +119,7 @@ func computeFingerprint(rel *Relation) string {
 // Returns error for NOTHING which cannot decode UPDATE/DELETE.
 func (r *Relation) ValidateReplicaIdentity() error {
 	if r.ReplicaIdentity == ReplicaIdentityNothing {
-		return fmt.Errorf("table %s.%s has REPLICA IDENTITY NOTHING; cannot decode UPDATE/DELETE", 
+		return fmt.Errorf("table %s.%s has REPLICA IDENTITY NOTHING; cannot decode UPDATE/DELETE",
 			r.Namespace, r.Name)
 	}
 	return nil

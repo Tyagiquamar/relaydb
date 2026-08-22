@@ -82,15 +82,15 @@ type Transaction struct {
 
 // RelationVersion represents a schema version for a table.
 type RelationVersion struct {
-	ID               int64             `json:"id"`
-	SourceID         string            `json:"source_id"`
-	RelationOID      uint32            `json:"relation_oid"`
-	SchemaName       string            `json:"schema_name"`
-	TableName        string            `json:"table_name"`
-	Fingerprint      string            `json:"fingerprint"`
-	ColumnDefs       []ColumnDef       `json:"column_definitions"`
-	ReplicaIdentity  ReplicaIdentity   `json:"replica_identity"`
-	CreatedAt        time.Time         `json:"created_at"`
+	ID              int64           `json:"id"`
+	SourceID        string          `json:"source_id"`
+	RelationOID     uint32          `json:"relation_oid"`
+	SchemaName      string          `json:"schema_name"`
+	TableName       string          `json:"table_name"`
+	Fingerprint     string          `json:"fingerprint"`
+	ColumnDefs      []ColumnDef     `json:"column_definitions"`
+	ReplicaIdentity ReplicaIdentity `json:"replica_identity"`
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 // ColumnDef describes a column in a relation.

@@ -21,13 +21,13 @@ type Pool struct {
 
 // Config holds pool configuration.
 type Config struct {
-	URL                 string
-	MinConns            int32
-	MaxConns            int32
-	MaxConnLifetime     time.Duration
+	URL                   string
+	MinConns              int32
+	MaxConns              int32
+	MaxConnLifetime       time.Duration
 	MaxConnLifetimeJitter time.Duration
-	MaxConnIdleTime     time.Duration
-	HealthCheckPeriod   time.Duration
+	MaxConnIdleTime       time.Duration
+	HealthCheckPeriod     time.Duration
 }
 
 // DefaultConfig returns production-tuned defaults.

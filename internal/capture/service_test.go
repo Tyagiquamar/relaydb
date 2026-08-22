@@ -93,11 +93,11 @@ func TestServiceCreation(t *testing.T) {
 
 func configForTest() config.Config {
 	return config.Config{
-		CaptureOwnerID:          "test-owner",
-		LeaseDuration:           30 * time.Second,
-		HeartbeatInterval:       10 * time.Second,
+		CaptureOwnerID:            "test-owner",
+		LeaseDuration:             30 * time.Second,
+		HeartbeatInterval:         10 * time.Second,
 		MaxTransactionBufferBytes: 1024 * 1024,
-		MaxEventBatchSize:       1000,
-		MaxInflightTransactions: 10,
+		MaxEventBatchSize:         1000,
+		MaxInflightTransactions:   10,
 	}
 }

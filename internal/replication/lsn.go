@@ -17,7 +17,7 @@ func ParseLSN(s string) (LSN, error) {
 // Position represents a canonical stream position.
 // This is the ordering primitive for all RelayDB operations.
 type Position struct {
-	CommitEndLSN  LSN `json:"commit_end_lsn"`
+	CommitEndLSN   LSN `json:"commit_end_lsn"`
 	SequenceNumber int `json:"sequence_number"`
 }
 

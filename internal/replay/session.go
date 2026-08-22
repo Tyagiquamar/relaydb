@@ -15,28 +15,28 @@ import (
 
 // Session represents a replay session.
 type Session struct {
-	ID               string
-	Name             string
-	SourceID         string
-	StartTimestamp   *time.Time
-	StartLSN         *uint64
-	StartEventID     []byte
-	EndTimestamp     *time.Time
-	EndLSN           *uint64
-	EndEventID       []byte
-	SchemaFilter     string
-	TableFilter      string
-	OperationFilter  string
-	DestinationType  string
+	ID                string
+	Name              string
+	SourceID          string
+	StartTimestamp    *time.Time
+	StartLSN          *uint64
+	StartEventID      []byte
+	EndTimestamp      *time.Time
+	EndLSN            *uint64
+	EndEventID        []byte
+	SchemaFilter      string
+	TableFilter       string
+	OperationFilter   string
+	DestinationType   string
 	DestinationConfig map[string]any
-	Status           string
-	EventsProcessed  int64
-	EventsTotal      *int64
-	LastProcessedLSN *uint64
-	ErrorMessage     string
-	CreatedAt        time.Time
-	StartedAt        *time.Time
-	CompletedAt      *time.Time
+	Status            string
+	EventsProcessed   int64
+	EventsTotal       *int64
+	LastProcessedLSN  *uint64
+	ErrorMessage      string
+	CreatedAt         time.Time
+	StartedAt         *time.Time
+	CompletedAt       *time.Time
 }
 
 // Service manages replay sessions.

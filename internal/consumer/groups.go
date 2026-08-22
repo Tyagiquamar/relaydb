@@ -19,15 +19,15 @@ import (
 
 // Group represents a consumer group.
 type Group struct {
-	ID               string
-	ConsumerID       string
-	SourceID         string
-	Name             string
-	PartitionCount   int
-	HashVersion      int
-	PoisonPolicy     string // dlq or halt
-	MaxAttempts      int
-	CreatedAt        time.Time
+	ID             string
+	ConsumerID     string
+	SourceID       string
+	Name           string
+	PartitionCount int
+	HashVersion    int
+	PoisonPolicy   string // dlq or halt
+	MaxAttempts    int
+	CreatedAt      time.Time
 }
 
 // Offset represents a consumer offset.
@@ -42,9 +42,9 @@ type Offset struct {
 
 // Service handles consumer operations.
 type Service struct {
-	pool      *persistence.Pool
-	leaseMgr  *lease.Manager
-	logger    *slog.Logger
+	pool     *persistence.Pool
+	leaseMgr *lease.Manager
+	logger   *slog.Logger
 }
 
 // NewService creates a consumer service.
@@ -480,9 +480,9 @@ func (s *Service) deadLetterConsumerEvent(ctx context.Context, tx pgx.Tx, groupI
 	}
 
 	history, err := json.Marshal([]map[string]any{{
-		"attempt": attempts,
+		"attempt":   attempts,
 		"timestamp": time.Now().UTC(),
-		"error": "consumer NACK attempt limit reached",
+		"error":     "consumer NACK attempt limit reached",
 	}})
 	if err != nil {
 		return fmt.Errorf("encode poison attempt history: %w", err)

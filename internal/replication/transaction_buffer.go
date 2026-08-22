@@ -14,8 +14,8 @@ type TransactionBuffer struct {
 	mu sync.Mutex
 
 	// Configuration
-	maxBytes   int64
-	maxEvents  int
+	maxBytes    int64
+	maxEvents   int
 	maxInflight int
 
 	// State
@@ -25,13 +25,13 @@ type TransactionBuffer struct {
 
 // TxContext holds the state for one in-flight transaction.
 type TxContext struct {
-	XID           uint32
-	FinalLSN      LSN
-	CommitLSN     LSN
-	CommitTime    time.Time
-	Events        []*eventstore.Event
-	TotalBytes    int64
-	Sequence      int
+	XID        uint32
+	FinalLSN   LSN
+	CommitLSN  LSN
+	CommitTime time.Time
+	Events     []*eventstore.Event
+	TotalBytes int64
+	Sequence   int
 }
 
 // NewTransactionBuffer creates a buffer with the given limits.
@@ -50,7 +50,7 @@ func (b *TransactionBuffer) Begin(xid uint32, finalLSN LSN) error {
 	defer b.mu.Unlock()
 
 	if len(b.transactions) >= b.maxInflight {
-		return fmt.Errorf("too many in-flight transactions: %d >= %d", 
+		return fmt.Errorf("too many in-flight transactions: %d >= %d",
 			len(b.transactions), b.maxInflight)
 	}
 

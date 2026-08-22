@@ -9,7 +9,7 @@ import (
 // TestPoolConfig tests pool configuration validation.
 func TestPoolConfig(t *testing.T) {
 	cfg := DefaultConfig("postgres://localhost/relaydb")
-	
+
 	if cfg.MinConns != 2 {
 		t.Errorf("MinConns = %d, want 2", cfg.MinConns)
 	}
@@ -25,7 +25,7 @@ func TestPoolConfig(t *testing.T) {
 func TestPoolRequiresValidURL(t *testing.T) {
 	ctx := context.Background()
 	cfg := DefaultConfig("invalid-url")
-	
+
 	_, err := NewPool(ctx, cfg)
 	if err == nil {
 		t.Fatal("NewPool should fail with invalid URL")

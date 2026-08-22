@@ -135,7 +135,8 @@ func envInt(key string, fallback int) int {
 	return n
 }
 
-func createSchema(conn *pgx.Conn) error {	_, err := conn.Exec(context.Background(), `
+func createSchema(conn *pgx.Conn) error {
+	_, err := conn.Exec(context.Background(), `
 		CREATE TABLE IF NOT EXISTS customers (
 			id BIGSERIAL PRIMARY KEY,
 			email TEXT NOT NULL UNIQUE,

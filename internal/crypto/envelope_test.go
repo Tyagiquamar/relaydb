@@ -49,7 +49,7 @@ func TestEnvelopeWrongKey(t *testing.T) {
 	aad := ComputeAAD("source-123", "credential")
 
 	ciphertext, _ := env1.Encrypt(plaintext, aad)
-	
+
 	_, err := env2.Decrypt(ciphertext, aad)
 	if err == nil {
 		t.Fatal("Decrypt() should fail with wrong key")
@@ -65,7 +65,7 @@ func TestEnvelopeWrongAAD(t *testing.T) {
 	aad2 := ComputeAAD("source-2", "credential")
 
 	ciphertext, _ := env.Encrypt(plaintext, aad1)
-	
+
 	_, err := env.Decrypt(ciphertext, aad2)
 	if err == nil {
 		t.Fatal("Decrypt() should fail with wrong AAD")
@@ -80,10 +80,10 @@ func TestEnvelopeTampered(t *testing.T) {
 	aad := ComputeAAD("source-1", "credential")
 
 	ciphertext, _ := env.Encrypt(plaintext, aad)
-	
+
 	// Tamper with ciphertext
 	ciphertext[len(ciphertext)-1] ^= 0xFF
-	
+
 	_, err := env.Decrypt(ciphertext, aad)
 	if err == nil {
 		t.Fatal("Decrypt() should fail with tampered ciphertext")
@@ -98,7 +98,7 @@ func TestEnvelopeVersion(t *testing.T) {
 	aad := ComputeAAD("source-1", "credential")
 
 	ciphertext, _ := env.Encrypt(plaintext, aad)
-	
+
 	// Check version byte
 	if ciphertext[0] != EnvelopeVersion {
 		t.Errorf("version = %d, want %d", ciphertext[0], EnvelopeVersion)

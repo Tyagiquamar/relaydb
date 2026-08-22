@@ -24,7 +24,6 @@ linters:
         - diagnostic
         - performance
       disabled-checks:
-        - whyNoLint
         - hugeParam
         # CLI mains legitimately log.Fatal after deferring connection cleanup;
         # process teardown releases the resources regardless.
