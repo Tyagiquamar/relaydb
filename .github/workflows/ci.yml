@@ -69,10 +69,11 @@ jobs:
           go-version-file: go.mod
 
       # Enforces .golangci.yml; failures fail the build (no || true).
+      # Pinned: needs a build >= go1.26 to typecheck this module.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1
+          version: v2.13.1
 
   frontend:
     runs-on: ubuntu-latest
