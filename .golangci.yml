@@ -16,6 +16,25 @@ linters:
     - unconvert
     - gocritic
 
+  settings:
+    gocritic:
+      # diagnostic + performance carry defect signal; experimental/style
+      # (paramTypeCombine, importShadow, ...) are review-level nitpicks.
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - whyNoLint
+        - hugeParam
+        # CLI mains legitimately log.Fatal after deferring connection cleanup;
+        # process teardown releases the resources regardless.
+        - exitAfterDefer
+
+    gosec:
+      excludes:
+        - G101 # Potential hardcoded credentials (we have env vars)
+        - G304 # File path from variable (we control our paths)
+
   exclusions:
     rules:
       # Test files: security/style scanners produce noise on fixtures/helpers.
@@ -38,25 +57,6 @@ linters:
 formatters:
   enable:
     - gofmt
-
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - performance
-      - style
-    disabled-checks:
-      - whyNoLint
-      - hugeParam
-      # CLI mains legitimately log.Fatal after deferring connection cleanup;
-      # process teardown releases the resources regardless.
-      - exitAfterDefer
-
-  gosec:
-    excludes:
-      - G101 # Potential hardcoded credentials (we have env vars)
-      - G304 # File path from variable (we control our paths)
 
 issues:
   # Maximum issue count per linter

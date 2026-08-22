@@ -108,7 +108,7 @@ func (s *Server) parseAuth(r *http.Request) (keyID, key string) {
 	}
 
 	parts := strings.SplitN(auth, " ", 2)
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
 		return "", ""
 	}
 

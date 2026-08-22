@@ -84,8 +84,7 @@ func (e *Envelope) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
 
 	// Build envelope: [version][key_id][wrapped_dek_len:2][wrapped_dek][ciphertext]
 	envelope := make([]byte, 0, 4+len(wrappedDEK)+len(ciphertext))
-	envelope = append(envelope, EnvelopeVersion)
-	envelope = append(envelope, e.keyID)
+	envelope = append(envelope, EnvelopeVersion, e.keyID)
 	envelope = append(envelope, byte(len(wrappedDEK)>>8), byte(len(wrappedDEK)))
 	envelope = append(envelope, wrappedDEK...)
 	envelope = append(envelope, ciphertext...)
