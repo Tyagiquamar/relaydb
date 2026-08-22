@@ -138,7 +138,12 @@ func (s *Service) deliverOne(ctx context.Context) (bool, error) {
 			FROM delivery_attempts da
 			JOIN webhook_sinks w ON w.id = da.sink_id
 			JOIN events e ON e.id = da.event_id
-			WHERE da.status IN ('pending', 'retryable')
+			-- Claim only work actually awaiting execution: 'pending' rows are
+			-- the queue. Terminal outcomes ('success', 'retryable',
+			-- 'permanent_failure') are history; including 'retryable' here
+			-- would re-deliver completed attempts forever and starve the
+			-- scheduled follow-up attempt behind ORDER BY da.id.
+			WHERE da.status = 'pending'
 			  AND (da.next_retry_at IS NULL OR da.next_retry_at <= now())
 			ORDER BY da.id
 			LIMIT 1
