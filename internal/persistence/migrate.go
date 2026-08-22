@@ -2,14 +2,13 @@ package persistence
 
 import (
 	"context"
-	"embed"
 	"fmt"
+	"io/fs"
 	"sort"
 	"strings"
-)
 
-//go:embed migrations/*.sql
-var migrationsFS embed.FS
+	"github.com/tyagiquamar/relaydb/migrations"
+)
 
 // Migration represents a database migration.
 type Migration struct {
@@ -67,14 +66,14 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 	return nil
 }
 
-// loadMigrations loads migrations from the embedded filesystem.
+// loadMigrations loads migrations from the embedded canonical migrations FS.
 func loadMigrations() ([]Migration, error) {
-	entries, err := migrationsFS.ReadDir("migrations")
+	entries, err := fs.ReadDir(migrations.FS, ".")
 	if err != nil {
 		return nil, err
 	}
 
-	var migrations []Migration
+	var list []Migration
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
@@ -86,12 +85,12 @@ func loadMigrations() ([]Migration, error) {
 			continue
 		}
 
-		data, err := migrationsFS.ReadFile("migrations/" + entry.Name())
+		data, err := migrations.FS.ReadFile(entry.Name())
 		if err != nil {
 			return nil, err
 		}
 
-		migrations = append(migrations, Migration{
+		list = append(list, Migration{
 			Version: version,
 			Name:    entry.Name(),
 			SQL:     string(data),
@@ -99,11 +98,11 @@ func loadMigrations() ([]Migration, error) {
 	}
 
 	// Sort by version
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Version < list[j].Version
 	})
 
-	return migrations, nil
+	return list, nil
 }
 
 // getAppliedVersions returns the set of applied migration versions.

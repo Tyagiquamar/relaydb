@@ -1,8 +1,0 @@
-internal\eventstore\types.go:7:2: no required module provides package github.com/oklog/ulid/v2; to add it:
-	go get github.com/oklog/ulid/v2
-internal\persistence\pool.go:8:2: no required module provides package github.com/jackc/pgx/v5; to add it:
-	go get github.com/jackc/pgx/v5
-internal\persistence\pool.go:9:2: no required module provides package github.com/jackc/pgx/v5/pgxpool; to add it:
-	go get github.com/jackc/pgx/v5/pgxpool
-internal\persistence\migrate.go:11:12: pattern migrations/*.sql: no matching files found
-NativeCommandExitException: Program "go.exe" ended with non-zero exit code: 1 (0x00000001).

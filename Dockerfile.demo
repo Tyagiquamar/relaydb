@@ -12,12 +12,14 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/capture ./cmd/capture
 RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/delivery ./cmd/delivery
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/demo-commerce ./cmd/demo-commerce
 
 FROM postgres:16-alpine
 
 COPY --from=builder /bin/api /bin/api
 COPY --from=builder /bin/capture /bin/capture
 COPY --from=builder /bin/delivery /bin/delivery
+COPY --from=builder /bin/demo-commerce /bin/demo-commerce
 COPY docker/postgres/postgresql.conf /etc/postgresql/postgresql.conf
 COPY docker/postgres/pg_hba.conf /etc/postgresql/pg_hba.conf
 COPY examples/commerce/seed.sql /seed/commerce-seed.sql

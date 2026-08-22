@@ -1,5 +1,32 @@
 # RelayDB — Session Handoff (2026-08-18)
 
+> **UPDATE 2026-08-21 — read this first; sections below are historical.**
+> Everything in the blocker list through §4 is RESOLVED. Current state:
+>
+> - **End-to-end WAL proof is real**: `tests/integration/workflow_test.go`
+>   streams actual pgoutput from a `wal_level=logical` container into a second
+>   metadata cluster via the in-process capture service, and asserts ordered
+>   exactly-once events, crash-before-ACK replay idempotency (test hook now
+>   fails the stream instead of panicking), lease-lapse takeover, and
+>   generation fencing. `go test ./...` runs it — no build tag.
+> - **Security hardening landed**: gRPC auth interceptor validates bearer
+>   keys (`internal/grpc/auth_test.go`), REST compares use
+>   `crypto/subtle.ConstantTimeCompare`, webhook dialer blocks
+>   loopback/RFC1918/link-local including redirects (`internal/webhook/deliverer_test.go`).
+> - **Replay engine** exists with passing tests; relayctl implements the
+>   commands that matter; consumer poll is keyset-paginated.
+> - **Migrations single-sourced**: `migrations/` + `migrations/migrations.go`
+>   (go:embed). The old `internal/persistence/migrations` copy is deleted.
+> - **Shop simulator** (`cmd/demo-commerce`) feeds the hosted demo with real
+>   CDC traffic; deployed on SnapDeploy per the free-tier runbook.
+> - **Pool metrics fix**: multiple pools in one process no longer panic on
+>   duplicate Prometheus registration (unique instance labels, live gauges).
+> - Removed: placeholder `t.Log` test suites, committed `build.log`,
+>   AI-session artifacts from the public tree.
+>
+> Verification ritual: `go vet ./... && go test -count=1 ./...` (includes the
+> ~35s end-to-end suite; requires Docker).
+
 **Repo:** `D:\pers\relaydb` (git, branch `main`, no remote)
 **Plan being executed:** [docs/plans/2026-08-18-001-feat-relaydb-cdc-platform-plan.md](docs/plans/2026-08-18-001-feat-relaydb-cdc-platform-plan.md)
 **State:** Local end-to-end dashboard/CDC smoke-run is complete and Docker images build. Hosted deployment is prepared but blocked only by Railway account billing; see [docs/deployment.md](deployment.md).
@@ -22,7 +49,7 @@
 - **buf 1.72.0** installed via winget (on PATH after session refresh).
 - **Docker Compose v5.3.1** present. Node 24, pnpm 11.8 present.
 - Module: `github.com/tyagiquamar/relaydb`. pglogrepl pinned to pseudo-version `v0.0.0-20260401131349-e37c41485510`.
-- Migrations exist in BOTH `migrations/001_init.sql` (canonical) and `internal/persistence/migrations/001_init.sql` (embedded copy for the Go migrator — must be kept in sync manually).
+- Migrations are single-sourced in `migrations/` and embedded via `migrations/migrations.go` (go:embed) — the old duplicated copy under `internal/persistence/migrations` was removed on 2026-08-21.
 
 ## 2. Git history
 

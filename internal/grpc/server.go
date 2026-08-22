@@ -9,7 +9,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/tyagiquamar/relaydb/gen"
@@ -43,7 +42,9 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	}
 
 	srv := grpc.NewServer(
-		grpc.UnaryInterceptor(s.authInterceptor),
+		grpc.ChainUnaryInterceptor(
+			AuthInterceptor(s.cfg.AdminAPIKeyID, s.cfg.AdminAPIKey, s.cfg.ReaderAPIKeyID, s.cfg.ReaderAPIKey),
+		),
 	)
 
 	relaydbv1.RegisterConsumerServiceServer(srv, s)
@@ -56,24 +57,6 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	}()
 
 	return srv.Serve(lis)
-}
-
-// authInterceptor validates API keys.
-func (s *Server) authInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "no metadata")
-	}
-
-	auth := md.Get("authorization")
-	if len(auth) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "no authorization header")
-	}
-
-	// Validate key (simplified - production: constant-time compare, hashed storage)
-	_ = auth[0]
-
-	return handler(ctx, req)
 }
 
 // Poll implements ConsumerService.Poll.

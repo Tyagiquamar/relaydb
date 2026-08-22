@@ -238,9 +238,9 @@ func (s *Service) recordResult(ctx context.Context, tx pgx.Tx, a *claimedAttempt
 		}
 
 		history, _ := json.Marshal([]map[string]any{{
-			"attempt":   a.attemptNumber,
-			"timestamp": time.Now().UTC(),
-			"error":     errString(res),
+			"attempt":     a.attemptNumber,
+			"timestamp":   time.Now().UTC(),
+			"error":       errString(res),
 			"http_status": res.StatusCode,
 		}})
 

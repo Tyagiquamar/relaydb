@@ -13,10 +13,10 @@ func TestAuthParsing(t *testing.T) {
 	s := &Server{}
 
 	tests := []struct {
-		name     string
-		header   string
-		wantID   string
-		wantKey  string
+		name    string
+		header  string
+		wantID  string
+		wantKey string
 	}{
 		{"valid", "Bearer admin:secret123", "admin", "secret123"},
 		{"no bearer", "secret123", "", ""},

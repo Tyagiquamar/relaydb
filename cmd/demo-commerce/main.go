@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/tyagiquamar/relaydb/internal/config"
@@ -43,6 +46,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// Self-driving traffic: real writes into the source schema so the hosted
+	// demo always has fresh CDC events flowing through capture -> webhooks.
+	if secs := envInt("DEMO_TRAFFIC_INTERVAL_SECS", 0); secs > 0 {
+		go runTrafficLoop(conn, time.Duration(secs)*time.Second)
+		logger.Info("demo traffic enabled", "interval_secs", secs)
+	}
+
 	logger.Info("demo-commerce listening", "addr", cfg.HTTPAddr)
 	logger.Info("endpoints: POST /orders, POST /orders/{id}/pay, POST /orders/{id}/cancel")
 
@@ -51,8 +61,81 @@ func main() {
 	}
 }
 
-func createSchema(conn *pgx.Conn) error {
-	_, err := conn.Exec(context.Background(), `
+// runTrafficLoop writes a realistic order lifecycle straight into the source
+// schema: new order -> paid or cancelled (occasionally left pending). Every
+// statement is real WAL that capture must decode and persist.
+func runTrafficLoop(conn *pgx.Conn, every time.Duration) {
+	ctx := context.Background()
+	seq := 0
+	for {
+		time.Sleep(every)
+		seq++
+
+		var customerID int64
+		if err := conn.QueryRow(ctx,
+			`SELECT id FROM customers ORDER BY id LIMIT 1 OFFSET $1`, seq%2).Scan(&customerID); err != nil {
+			log.Printf("traffic: pick customer: %v", err)
+			continue
+		}
+
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			log.Printf("traffic: begin: %v", err)
+			continue
+		}
+		productID := int64(1 + seq%2)
+		var priceCents int
+		if err := tx.QueryRow(ctx, `SELECT price_cents FROM products WHERE id = $1`, productID).Scan(&priceCents); err != nil {
+			tx.Rollback(ctx)
+			continue
+		}
+		qty := 1 + seq%3
+
+		var orderID int64
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO orders (customer_id, total_cents) VALUES ($1, $2) RETURNING id`,
+			customerID, priceCents*qty).Scan(&orderID); err != nil {
+			tx.Rollback(ctx)
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO order_items (order_id, product_id, quantity, price_cents) VALUES ($1,$2,$3,$4)`,
+			orderID, productID, qty, priceCents); err != nil {
+			tx.Rollback(ctx)
+			continue
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE products SET inventory_count = inventory_count - $1 WHERE id = $2`, qty, productID); err != nil {
+			tx.Rollback(ctx)
+			continue
+		}
+		if err := tx.Commit(ctx); err != nil {
+			continue
+		}
+
+		switch seq % 4 {
+		case 0, 1:
+			conn.Exec(ctx, `UPDATE orders SET status='paid', updated_at=now() WHERE id=$1 AND status='pending'`, orderID)
+		case 2:
+			conn.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE id=$1 AND status='pending'`, orderID)
+		}
+		log.Printf("traffic: order #%d lifecycle written", orderID)
+	}
+}
+
+func envInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func createSchema(conn *pgx.Conn) error {	_, err := conn.Exec(context.Background(), `
 		CREATE TABLE IF NOT EXISTS customers (
 			id BIGSERIAL PRIMARY KEY,
 			email TEXT NOT NULL UNIQUE,

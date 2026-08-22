@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -125,35 +126,43 @@ func (p *Pool) Stats() *pgxpool.Stat {
 	return p.pool.Stat()
 }
 
-// exportPoolStats registers pool metrics.
+// exportPoolStats registers pool metrics. Each pool gets a unique instance
+// label so multiple pools in one process (tests, multi-embedding binaries)
+// never collide on metric names, and closures re-read live stats instead of a
+// boot-time snapshot.
 func exportPoolStats(pool *pgxpool.Pool) {
-	stats := pool.Stat()
-	
-	// Register gauges for pool stats
+	poolID := fmt.Sprintf("pool_%d", poolSeq.Add(1))
+	labels := prometheus.Labels{"pool": poolID}
+
 	telemetry.Registry.MustRegister(
 		prometheus.NewGaugeFunc(
 			prometheus.GaugeOpts{
-				Namespace: "relaydb",
-				Name:      "pgx_pool_connections_open",
-				Help:      "Number of open connections in the pool.",
+				Namespace:   "relaydb",
+				Name:        "pgx_pool_connections_open",
+				Help:        "Number of open connections in the pool.",
+				ConstLabels: labels,
 			},
-			func() float64 { return float64(stats.TotalConns()) },
+			func() float64 { return float64(pool.Stat().TotalConns()) },
 		),
 		prometheus.NewGaugeFunc(
 			prometheus.GaugeOpts{
-				Namespace: "relaydb",
-				Name:      "pgx_pool_connections_idle",
-				Help:      "Number of idle connections in the pool.",
+				Namespace:   "relaydb",
+				Name:        "pgx_pool_connections_idle",
+				Help:        "Number of idle connections in the pool.",
+				ConstLabels: labels,
 			},
-			func() float64 { return float64(stats.IdleConns()) },
+			func() float64 { return float64(pool.Stat().IdleConns()) },
 		),
 		prometheus.NewGaugeFunc(
 			prometheus.GaugeOpts{
-				Namespace: "relaydb",
-				Name:      "pgx_pool_connections_used",
-				Help:      "Number of in-use connections in the pool.",
+				Namespace:   "relaydb",
+				Name:        "pgx_pool_connections_used",
+				Help:        "Number of in-use connections in the pool.",
+				ConstLabels: labels,
 			},
-			func() float64 { return float64(stats.AcquiredConns()) },
+			func() float64 { return float64(pool.Stat().AcquiredConns()) },
 		),
 	)
 }
+
+var poolSeq atomic.Int64

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -69,7 +70,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) authAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		keyID, key := s.parseAuth(r)
-		if keyID != s.adminKeyID || key != s.adminKey {
+		if !s.matchAdmin(keyID, key) {
 			s.writeError(w, http.StatusUnauthorized, "invalid admin credentials")
 			return
 		}
@@ -80,13 +81,24 @@ func (s *Server) authAdmin(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) authReader(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		keyID, key := s.parseAuth(r)
-		if (keyID == s.adminKeyID && key == s.adminKey) ||
-			(keyID == s.readerKeyID && key == s.readerKey) {
+		if s.matchAdmin(keyID, key) || s.matchReader(keyID, key) {
 			next(w, r)
 			return
 		}
 		s.writeError(w, http.StatusUnauthorized, "invalid credentials")
 	}
+}
+
+// matchAdmin reports constant-time equality with the admin credential pair.
+func (s *Server) matchAdmin(keyID, key string) bool {
+	return subtle.ConstantTimeCompare([]byte(keyID), []byte(s.adminKeyID)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(key), []byte(s.adminKey)) == 1
+}
+
+// matchReader reports constant-time equality with the reader credential pair.
+func (s *Server) matchReader(keyID, key string) bool {
+	return subtle.ConstantTimeCompare([]byte(keyID), []byte(s.readerKeyID)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(key), []byte(s.readerKey)) == 1
 }
 
 func (s *Server) parseAuth(r *http.Request) (keyID, key string) {
@@ -128,11 +140,11 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 // Source handlers
 type CreateSourceRequest struct {
-	Name            string `json:"name"`
-	Description     string `json:"description"`
+	Name             string `json:"name"`
+	Description      string `json:"description"`
 	ConnectionString string `json:"connection_string"` // Will be encrypted
-	ReplicationSlot string `json:"replication_slot"`
-	Publication     string `json:"publication"`
+	ReplicationSlot  string `json:"replication_slot"`
+	Publication      string `json:"publication"`
 }
 
 func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
@@ -367,19 +379,19 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		events = append(events, map[string]any{
-			"id":               id,
-			"source_id":        sourceID,
-			"transaction_id":   txID,
-			"commit_end_lsn":   lsn,
-			"sequence_number":  seq,
-			"schema_name":      schema,
-			"table_name":       table,
-			"operation":        op,
-			"before":           json.RawMessage(before),
-			"after":            json.RawMessage(after),
-			"key_columns":      json.RawMessage(key),
-			"payload_hash":     hash,
-			"created_at":       createdAt,
+			"id":              id,
+			"source_id":       sourceID,
+			"transaction_id":  txID,
+			"commit_end_lsn":  lsn,
+			"sequence_number": seq,
+			"schema_name":     schema,
+			"table_name":      table,
+			"operation":       op,
+			"before":          json.RawMessage(before),
+			"after":           json.RawMessage(after),
+			"key_columns":     json.RawMessage(key),
+			"payload_hash":    hash,
+			"created_at":      createdAt,
 		})
 	}
 
@@ -506,11 +518,11 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var stats struct {
-		Sources          int     `json:"sources"`
-		EventsPerSecond  float64 `json:"eventsPerSecond"`
-		CaptureLag       string  `json:"captureLag"`
-		Consumers        int     `json:"consumers"`
-		DLQDepth         int     `json:"dlqDepth"`
+		Sources         int     `json:"sources"`
+		EventsPerSecond float64 `json:"eventsPerSecond"`
+		CaptureLag      string  `json:"captureLag"`
+		Consumers       int     `json:"consumers"`
+		DLQDepth        int     `json:"dlqDepth"`
 	}
 
 	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM sources`).Scan(&stats.Sources)

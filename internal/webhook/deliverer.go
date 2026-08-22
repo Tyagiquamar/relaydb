@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,14 +20,44 @@ type Deliverer struct {
 	client *http.Client
 }
 
-// NewDeliverer creates a deliverer with secure defaults.
+// Options configures a Deliverer.
+type Options struct {
+	// AllowPrivateAddresses permits dialing loopback, RFC1918, link-local and
+	// unspecified addresses. Intended for local development and tests only;
+	// production deliverers must leave it false so webhook URLs cannot be
+	// used to probe internal networks (SSRF).
+	AllowPrivateAddresses bool
+
+	// MaxRedirects limits redirect hops; each hop is dialed through the same
+	// guarded dialer, so private targets are re-checked per hop.
+	MaxRedirects int
+}
+
+// NewDeliverer creates a deliverer with secure defaults: private networks are
+// unreachable and redirects are followed only through the guarded dialer.
 func NewDeliverer() *Deliverer {
-	// Create a transport that blocks private/loopback IPs (SSRF protection)
+	return NewDelivererWithOptions(Options{})
+}
+
+// NewDelivererWithOptions creates a deliverer with explicit options.
+func NewDelivererWithOptions(opts Options) *Deliverer {
+	if opts.MaxRedirects <= 0 {
+		opts.MaxRedirects = 3
+	}
+
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Control: func(network, address string, _ syscall.RawConn) error {
+			if opts.AllowPrivateAddresses {
+				return nil
+			}
+			return rejectPrivateAddress(address)
+		},
+	}
+
 	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		DialContext:           dialer.DialContext,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
@@ -38,22 +70,48 @@ func NewDeliverer() *Deliverer {
 			Transport: transport,
 			Timeout:   30 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse // Don't follow redirects
+				if len(via) > opts.MaxRedirects {
+					return fmt.Errorf("stopped after %d redirects", opts.MaxRedirects)
+				}
+				return nil // Each hop is re-validated by the dialer Control hook.
 			},
 		},
 	}
 }
 
+// rejectPrivateAddress blocks dial targets that resolve into networks where
+// webhook delivery must never go: loopback, RFC1918/ULA private ranges,
+// link-local (including the cloud metadata endpoint 169.254.169.254),
+// unspecified and multicast addresses.
+func rejectPrivateAddress(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("webhook dial target %q is not host:port", address)
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("webhook dial target %q did not resolve to an IP", host)
+	}
+
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return fmt.Errorf("webhook dial to private or link-local address %s blocked", ip)
+	}
+
+	return nil
+}
+
 // Delivery represents a webhook delivery attempt.
 type Delivery struct {
-	ID            string
-	SinkID        string
-	EventID       []byte
-	URL           string
-	Secret        string
-	Payload       []byte
-	Attempt       int
-	MaxAttempts   int
+	ID             string
+	SinkID         string
+	EventID        []byte
+	URL            string
+	Secret         string
+	Payload        []byte
+	Attempt        int
+	MaxAttempts    int
 	IdempotencyKey string
 }
 
@@ -68,6 +126,12 @@ type Result struct {
 
 // Deliver sends a webhook.
 func (d *Deliverer) Deliver(ctx context.Context, del *Delivery) *Result {
+	// Only HTTP(S) sinks are supported; other schemes are a classic SSRF vector.
+	scheme, _, ok := strings.Cut(del.URL, ":")
+	if !ok || (scheme != "http" && scheme != "https") {
+		return &Result{Error: fmt.Errorf("unsupported webhook URL scheme %q", scheme), Retryable: false}
+	}
+
 	// Build request
 	req, err := http.NewRequestWithContext(ctx, "POST", del.URL, bytes.NewReader(del.Payload))
 	if err != nil {

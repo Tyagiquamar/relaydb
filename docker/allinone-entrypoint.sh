@@ -74,6 +74,14 @@ sleep 3
 RELAYDB_SERVICE=capture RELAYDB_CAPTURE_OWNER_ID=capture-1 RELAYDB_METRICS_ADDR=:2112 /bin/capture &
 RELAYDB_SERVICE=delivery RELAYDB_METRICS_ADDR=:2113 /bin/delivery &
 
+# Self-driving commerce traffic: real order lifecycles written into the source
+# schema on an interval so capture -> event store -> webhooks always carry
+# fresh data. Disable with DEMO_TRAFFIC=false.
+if [ "${DEMO_TRAFFIC:-true}" = "true" ]; then
+  RELAYDB_SERVICE=demo-commerce RELAYDB_HTTP_ADDR=:8081 \
+    DEMO_TRAFFIC_INTERVAL_SECS="${DEMO_TRAFFIC_INTERVAL_SECS:-45}" /bin/demo-commerce &
+fi
+
 # Exit (and let the platform restart the container) when any component dies.
 wait -n
 echo "allinone: a component exited, shutting down for restart" >&2

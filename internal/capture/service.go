@@ -3,6 +3,7 @@ package capture
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -210,8 +211,12 @@ func (h *captureHandler) OnMessage(ctx context.Context, msg replication.Message)
 			return 0, err
 		}
 
+		// Crash window: the transaction is durably persisted but NOT yet
+		// acknowledged (the commit LSN is not returned upstream). Failing the
+		// stream here forces a reconnect that replays from the last ACKed
+		// LSN — exactly what a hard kill between COMMIT and ACK produces.
 		if s.crashAfterCommit {
-			panic("simulated crash after commit")
+			return 0, errors.New("simulated crash after commit (test hook)")
 		}
 
 		return replication.LSN(m.TransactionEndLSN), nil
