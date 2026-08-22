@@ -72,17 +72,33 @@ RELAYDB_SERVICE=api /bin/api &
 API_PID=$!
 sleep 3
 RELAYDB_SERVICE=capture RELAYDB_CAPTURE_OWNER_ID=capture-1 RELAYDB_METRICS_ADDR=:2112 /bin/capture &
+CAPTURE_PID=$!
 RELAYDB_SERVICE=delivery RELAYDB_METRICS_ADDR=:2113 /bin/delivery &
+DELIVERY_PID=$!
 
 # Self-driving commerce traffic: real order lifecycles written into the source
 # schema on an interval so capture -> event store -> webhooks always carry
 # fresh data. Disable with DEMO_TRAFFIC=false.
+DEMO_PID=""
 if [ "${DEMO_TRAFFIC:-true}" = "true" ]; then
   RELAYDB_SERVICE=demo-commerce RELAYDB_HTTP_ADDR=:8081 \
     DEMO_TRAFFIC_INTERVAL_SECS="${DEMO_TRAFFIC_INTERVAL_SECS:-45}" /bin/demo-commerce &
+  DEMO_PID=$!
 fi
 
-# Exit (and let the platform restart the container) when any component dies.
-wait -n
-echo "allinone: a component exited, shutting down for restart" >&2
-exit 1
+# Portable `wait -n` replacement: busybox ash does not support wait -n, so poll
+# the pids directly and exit (letting the platform restart us) when any
+# component dies.
+PIDS="$API_PID $CAPTURE_PID $DELIVERY_PID"
+if [ -n "$DEMO_PID" ]; then
+  PIDS="$PIDS $DEMO_PID"
+fi
+
+while sleep 2; do
+  for pid in $PIDS; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "allinone: component pid $pid exited, shutting down for restart" >&2
+      exit 1
+    fi
+  done
+done
