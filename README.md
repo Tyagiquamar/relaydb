@@ -68,16 +68,17 @@ This means:
 The dashboard is an operations surface, not a marketing page. It has two
 explicit data modes, selected with the mode control in the sidebar:
 
-- **Demo** is the default. It renders deterministic CDC evidence: a
+- **Live** is the default. It reads the configured RelayDB API through the
+	server-side BFF proxy and retries through free-tier cold starts. It never
+	substitutes fixtures when the API is unavailable, empty, or does not yet
+	expose a capability — unavailable reads stay visibly unavailable.
+- **Demo**, opt-in via `?mode=demo`, renders deterministic CDC evidence: a
 	multi-table order transaction, source health, webhook dead letter, consumer
 	lease/retry/poison states, and representative replay cursors. It needs no
 	API or database.
-- **Live** reads the configured RelayDB API through the server-side BFF proxy.
-	It never substitutes fixtures when the API is unavailable, empty, or does
-	not yet expose a capability.
 
-Open `http://localhost:3000/?mode=demo` for the deterministic review surface.
-Use `?mode=live` to inspect the running Compose/API stack.
+Use `?mode=live` implicitly (the default) against the running Compose/API
+stack, or `?mode=demo` for the deterministic review surface.
 
 The dashboard keeps the reader API key on the server-side BFF. Browser code
 calls same-origin `/api/v1/*`; it does not receive the key.
@@ -155,9 +156,6 @@ following work is intentionally not presented as complete:
 	functional command implementations are still being completed.
 - Consumer/replay dashboard telemetry is represented in Demo mode only until
 	backed Live API endpoints and runtime proof suites land.
-- A hosted deployment has not been created because Railway account billing is
-	currently blocked. The production topology and required variables are in
-	[docs/deployment.md](docs/deployment.md).
 
 That boundary is deliberate: Demo mode demonstrates the intended operational
 shape, while Live mode reports only behavior the running service can actually
@@ -165,12 +163,13 @@ provide.
 
 ## Deployment
 
-The intended deployment topology is Vercel for the dashboard and a container
-host such as Railway for API, capture, delivery, demo-commerce, source
-PostgreSQL, and metadata PostgreSQL. Read
-[docs/deployment.md](docs/deployment.md) for required variables, persistent
-source volume requirements, local smoke checks, and the current hosted-deploy
-prerequisite.
+RelayDB runs live as a single all-in-one container (source PostgreSQL with
+logical replication, metadata store, API, capture, delivery, and commerce
+traffic) on free-tier hosting, with the operations dashboard deployed to
+Vercel at https://relaydb-dashboard.vercel.app. Read
+[docs/deployment.md](docs/deployment.md) for the hosted topology, required
+variables, reproduction steps, and the multi-service layout for hosts with
+persistent volumes.
 
 ## License
 

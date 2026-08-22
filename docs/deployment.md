@@ -1,5 +1,81 @@
 # RelayDB Deployment
 
+## Hosted demo
+
+The public demo is a single self-contained container: PostgreSQL 16 with
+logical replication enabled plus the API, capture, delivery, and demo-commerce
+services, hosted on SnapDeploy's free tier. The operations dashboard runs on
+Vercel and talks to it through a server-side BFF proxy.
+
+| Component | Runtime | Public URL |
+|---|---|---|
+| RelayDB stack (source PostgreSQL, metadata store, api, capture, delivery, commerce traffic) | SnapDeploy free tier, built from `Dockerfile.demo` | https://relaydb.containers.snapdeploy.app |
+| Operations dashboard | Vercel | https://relaydb-dashboard.vercel.app |
+
+Verified 2026-08-22: `GET https://relaydb.containers.snapdeploy.app/health/live`
+returns `200`.
+
+### How the single container works
+
+`Dockerfile.demo` builds the Go binaries into a `postgres:16-alpine` base.
+`docker/allinone-entrypoint.sh` initializes an in-container PostgreSQL with
+logical replication configured, creates and seeds the commerce schema and the
+`relaydb_pub` publication, then starts the API (which applies embedded
+migrations first), capture, delivery, and a commerce traffic generator that
+posts real order lifecycles every 45 seconds so capture → event store →
+webhook delivery always carry fresh data.
+
+Two constraints shaped it:
+
+- The app listens on port 5432 (`RELAYDB_HTTP_ADDR=:5432`) because that is the
+  port the platform edge routes to; PostgreSQL moved internally to 5433.
+- Demo state is disposable. The free tier provides no persistent disk, so the
+  in-container database resets on redeploy and re-seeds itself. History does
+  not survive restarts by design.
+
+Free-tier instances sleep when idle; a cold wake shows fresh CDC data within
+about a minute. The dashboard defaults to live mode and retries through the
+wake window. It never substitutes fixture data when the API is unavailable or
+empty — unavailable reads stay visibly unavailable.
+
+## Required variables
+
+Generate independent production secrets. Do not reuse Compose development
+defaults outside local development.
+
+| Surface | Variables |
+|---|---|
+| Container host service | `RELAYDB_ADMIN_KEY`, `RELAYDB_READER_KEY`; optional `DEMO_TRAFFIC=false`, `DEMO_TRAFFIC_INTERVAL_SECS` |
+| Vercel dashboard | `RELAYDB_API_URL=https://relaydb.containers.snapdeploy.app`, `RELAYDB_READER_KEY_ID`, `RELAYDB_READER_KEY` (all server-side only; the browser only calls same-origin `/api/v1/*`) |
+
+Connection strings (`RELAYDB_METADATA_DB_URL`,
+`RELAYDB_SOURCE_DB_URL`), addresses, key IDs, and `RELAYDB_MASTER_KEY` have
+sane single-container defaults baked into the entrypoint. The platform-assigned
+port is honored automatically.
+
+## Reproducing the deploy
+
+1. In SnapDeploy (or any container host): create a service from this
+   repository, Dockerfile path `./Dockerfile.demo`, health check path
+   `/health/live`. Set `RELAYDB_ADMIN_KEY` and `RELAYDB_READER_KEY` before the
+   first deploy.
+2. Confirm `GET https://<service-domain>/health/live` responds with `200`.
+3. On Vercel: import `dashboard/`, set the three dashboard variables as
+   server-side environment variables, deploy, and confirm events appear on the
+   live dashboard within a minute of wake-up.
+
+## Multi-service layout
+
+For a production-shaped split (separate source PostgreSQL with a persistent
+volume, metadata PostgreSQL, and individual api/capture/delivery/
+demo-commerce containers), use `docker-compose.yml` locally, or the root
+`Dockerfile` on any container host: set `RELAYDB_RUN` to one of `api`,
+`capture`, `delivery`, or `demo-commerce` per service and attach a volume at
+`/var/lib/postgresql/data` on the source database before its first deploy. The
+source image builds from `docker/postgres` and initializes the commerce schema
+plus the `relaydb_pub` publication. Per-service variables are listed in the
+Compose file.
+
 ## Verified local stack
 
 The complete dashboard read path has been smoke-tested with Docker Compose:
@@ -20,56 +96,3 @@ To create fresh CDC traffic, start the demo service and post an order:
 docker compose --profile demo up -d demo-commerce
 curl.exe -X POST http://localhost:8081/orders -H "Content-Type: application/json" -d '{"customer_id":1,"items":[{"product_id":1,"quantity":1}]}'
 ```
-
-## Production topology
-
-| Service | Runtime | Purpose |
-|---|---|---|
-| Dashboard | Vercel | Public UI and server-side BFF proxy |
-| API | Railway service | REST, gRPC, health, and metrics |
-| Capture | Railway service | Logical replication ingestion |
-| Delivery | Railway service | Webhook retry and DLQ loop |
-| Demo commerce | Railway service | Public order API that generates demo CDC events |
-| Source PostgreSQL | Railway service + volume | Logical replication source with `relaydb_pub` |
-| Metadata PostgreSQL | Railway Postgres | Event store, checkpoints, and application metadata |
-
-The root `Dockerfile` defaults to a Railway launcher. Set `RELAYDB_RUN` to one
-of `api`, `capture`, `delivery`, or `demo-commerce` per service. Compose keeps
-using its explicit image targets and is unaffected.
-
-The source PostgreSQL service builds from `docker/postgres`; attach a persistent
-volume at `/var/lib/postgresql/data` before its first deploy. It contains the
-logical-replication configuration and initializes the commerce schema plus the
-`relaydb_pub` publication.
-
-## Required variables
-
-Generate independent production secrets. Do not use Compose development
-defaults outside local development.
-
-| Service | Variables |
-|---|---|
-| API | `RELAYDB_RUN=api`, `RELAYDB_METADATA_DB_URL`, `RELAYDB_MASTER_KEY`, `RELAYDB_ADMIN_KEY_ID`, `RELAYDB_ADMIN_KEY`, `RELAYDB_READER_KEY_ID`, `RELAYDB_READER_KEY` |
-| Capture | `RELAYDB_RUN=capture`, `RELAYDB_METADATA_DB_URL`, `RELAYDB_SOURCE_DB_URL`, `RELAYDB_SOURCE_NAME=demo`, `RELAYDB_CAPTURE_OWNER_ID`, `RELAYDB_MASTER_KEY` |
-| Delivery | `RELAYDB_RUN=delivery`, `RELAYDB_METADATA_DB_URL`, `RELAYDB_MASTER_KEY` |
-| Demo commerce | `RELAYDB_RUN=demo-commerce`, `RELAYDB_SOURCE_DB_URL` |
-| Source PostgreSQL | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB=commerce` |
-| Vercel dashboard | `RELAYDB_API_URL=https://<api-domain>`, `RELAYDB_READER_KEY_ID`, `RELAYDB_READER_KEY` |
-
-Set `RELAYDB_SOURCE_DB_URL` to the Railway private source-database connection
-string with `sslmode=disable`. Set `RELAYDB_METADATA_DB_URL` from the Railway
-Postgres `DATABASE_URL` reference. Railway injects `PORT`; API and demo services
-automatically bind to it when `RELAYDB_HTTP_ADDR` is unset.
-
-## Current hosted-deploy blocker
-
-Vercel and Railway CLIs are authenticated on this workstation. Railway project
-creation was attempted on 2026-08-18, but the account reported: `Your trial has
-expired. Please select a plan to continue using Railway.` No Railway project or
-billable resource was created.
-
-After enabling a Railway plan, create the project and services, attach the
-source database volume, set the variables above, then deploy the source service
-from `docker/postgres` and all RelayDB runtime services from the repository root.
-Finally deploy `dashboard/` to Vercel with the three dashboard variables. The
-public Vercel URL can then be used as the clickable product link.
