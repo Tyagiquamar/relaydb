@@ -4,20 +4,17 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   * {
-    border-color: #263246;
+    border-color: #d5dde3;
   }
 
   body {
-    @apply bg-[#080d16] text-slate-100;
-    background-image:
-      linear-gradient(rgba(38, 50, 70, 0.15) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(38, 50, 70, 0.15) 1px, transparent 1px);
-    background-size: 32px 32px;
-    font-family: Bahnschrift, "Trebuchet MS", "Segoe UI", sans-serif;
+    @apply bg-canvas text-ink;
+    font-family: var(--font-sans), "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
   button,
@@ -26,8 +23,8 @@
   }
 
   ::selection {
-    background: rgba(34, 211, 238, 0.28);
-    color: #ecfeff;
+    background: #0f6b87;
+    color: #f4f9fa;
   }
 }
 
@@ -42,10 +39,10 @@
   }
 
   .font-display {
-    font-family: Bahnschrift, "Trebuchet MS", "Segoe UI", sans-serif;
+    font-family: var(--font-display), Georgia, serif;
   }
 
   .font-data {
-    font-family: "Cascadia Code", Consolas, monospace;
+    font-family: var(--font-mono), Consolas, monospace;
   }
 }

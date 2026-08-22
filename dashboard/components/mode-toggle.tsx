@@ -9,11 +9,11 @@ export function ModeToggle() {
   const activeMode = resolveMode(searchParams.get('mode'))
 
   return (
-    <div className="flex overflow-hidden rounded-md border border-[#34445e] bg-[#101827] text-xs font-semibold" role="group" aria-label="Dashboard data mode">
+    <div className="flex overflow-hidden rounded-sm border border-seam-strong bg-surface text-xs font-semibold" role="group" aria-label="Dashboard data mode">
       {(['demo', 'live'] as const).map((mode) => (
         <a
           aria-current={activeMode === mode ? 'true' : undefined}
-          className={`px-3 py-1.5 transition-colors ${activeMode === mode ? 'bg-cyan-300 text-slate-950' : 'text-slate-400 hover:text-slate-100'}`}
+          className={`px-3 py-1.5 transition-colors ${activeMode === mode ? 'bg-petrol text-white' : 'text-soft hover:text-ink'}`}
           href={modeHref(pathname, mode)}
           key={mode}
         >

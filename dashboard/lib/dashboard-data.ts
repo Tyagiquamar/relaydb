@@ -91,12 +91,13 @@ const demoReplays: ReplayRecord[] = [
   { id: 'rpl_01HZWQ6P', name: 'backfill order analytics', destination: 'jsonl', status: 'completed', processed: 28004, total: 28004, cursor: '0/16B374C810 · 1' },
 ]
 
+// Live is the default view; demo fixtures are opt-in via ?mode=demo.
 export function resolveMode(value: string | null): DashboardMode {
-  return value === 'live' ? 'live' : 'demo'
+  return value === 'demo' ? 'demo' : 'live'
 }
 
 export function modeHref(pathname: string, mode: DashboardMode): string {
-  return `${pathname}?mode=${mode}`
+  return mode === 'demo' ? `${pathname}?mode=demo` : pathname
 }
 
 export function demoDashboardData(): DashboardData {

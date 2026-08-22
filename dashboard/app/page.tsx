@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation'
 import { EventRecord, EventTable } from '../components/event-table'
 import { DashboardStats, MetricStrip } from '../components/metric-strip'
 import { DashboardMode, getDashboardData, resolveMode, SourceRecord } from '../lib/dashboard-data'
+import { WhySection } from '../components/why-section'
+import { SiteFooter } from '../components/site-footer'
 
 const initialStats: DashboardStats = {
   sources: 0,
@@ -76,23 +78,23 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
-      <header className="flex flex-col gap-4 border-b border-[#263246] pb-5 md:flex-row md:items-end md:justify-between">
+      <header className="flex flex-col gap-4 border-b border-seam pb-5 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-300">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-petrol">
             <Database aria-hidden="true" className="h-3.5 w-3.5" />
             Pipeline overview
           </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-50">Capture operations</h1>
-          <p className="mt-1 text-sm text-slate-500">{mode === 'demo' ? 'Deterministic fixture set for CDC inspection' : source ? `${source.name} · ${source.status}` : 'Waiting for a registered source'}</p>
+          <h1 className="mt-2 font-display text-2xl tracking-tight text-ink md:text-3xl">Capture operations</h1>
+          <p className="mt-1 text-sm text-soft">{mode === 'demo' ? 'Deterministic fixture set for CDC inspection' : source ? `${source.name} · ${source.status}` : 'Waiting for a registered source'}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <p className="mr-1 text-xs text-slate-500">{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading pipeline state'}</p>
-          <button className="inline-flex h-9 items-center gap-2 rounded-md border border-[#34445e] bg-[#101827] px-3 text-sm font-medium text-slate-200 transition-colors hover:border-cyan-300/50 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={refreshing} onClick={() => void refresh(true)} type="button">
+          <p className="mr-1 font-data text-xs text-faint">{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading pipeline state'}</p>
+          <button className="inline-flex h-9 items-center gap-2 rounded-sm border border-seam-strong bg-surface px-3 text-sm font-medium text-body transition-colors hover:border-petrol/40 hover:text-petrol-deep disabled:cursor-not-allowed disabled:opacity-60" disabled={refreshing} onClick={() => void refresh(true)} type="button">
             <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <button className="inline-flex h-9 items-center gap-2 rounded-md bg-cyan-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={mode === 'demo' || !demoApiUrl || refreshing} onClick={() => void createDemoOrder()} title={mode === 'demo' ? 'Switch to Live to generate a real demo order' : demoApiUrl ? 'Create a demo order' : 'Set NEXT_PUBLIC_DEMO_API_URL to enable demo orders'} type="button">
+          <button className="inline-flex h-9 items-center gap-2 rounded-sm bg-petrol px-3 text-sm font-semibold text-white transition-colors hover:bg-petrol-deep disabled:cursor-not-allowed disabled:opacity-40" disabled={mode === 'demo' || !demoApiUrl || refreshing} onClick={() => void createDemoOrder()} title={mode === 'demo' ? 'Switch to Live to generate a real demo order' : demoApiUrl ? 'Create a demo order' : 'Set NEXT_PUBLIC_DEMO_API_URL to enable demo orders'} type="button">
             <Send aria-hidden="true" className="h-3.5 w-3.5" />
             Generate event
           </button>
@@ -100,9 +102,9 @@ export default function Dashboard() {
       </header>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-sm text-amber-100" role="status">
+        <div className="flex items-center gap-2 rounded-sm border border-amber-500/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-800" role="status">
           <CircleAlert aria-hidden="true" className="h-4 w-4 shrink-0" />
-          {error}. Showing the last successful snapshot.
+          {error}. Showing the last successful snapshot — the pipeline auto-refreshes every 10s.
         </div>
       )}
 
@@ -112,41 +114,44 @@ export default function Dashboard() {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Recent event stream</h2>
-              <p className="mt-1 text-xs text-slate-500">Latest committed changes across published relations</p>
+              <h2 className="text-sm font-semibold text-ink">Recent event stream</h2>
+              <p className="mt-1 text-xs text-faint">Latest committed changes across published relations</p>
             </div>
-            <a className="text-xs font-semibold text-cyan-300 hover:text-cyan-100" href="/events">View all events</a>
+            <a className="text-xs font-semibold text-petrol hover:text-petrol-deep" href="/events">View all events</a>
           </div>
           <EventTable events={events} loading={loading} />
         </div>
 
-        <aside className="rounded-lg border border-[#263246] bg-[#101827] p-5">
+        <aside className="rounded-md border border-seam bg-surface p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">Capture health</p>
-              <h2 className="mt-2 text-lg font-semibold text-slate-100">{sourceHealthy && !lagging ? 'Pipeline is flowing' : 'Pipeline needs attention'}</h2>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-faint">Capture health</p>
+              <h2 className="mt-2 text-lg font-semibold text-ink">{sourceHealthy && !lagging ? 'Pipeline is flowing' : 'Pipeline needs attention'}</h2>
             </div>
-            <ShieldCheck aria-hidden="true" className={`h-6 w-6 ${sourceHealthy && !lagging ? 'text-cyan-300' : 'text-amber-300'}`} />
+            <ShieldCheck aria-hidden="true" className={`h-6 w-6 ${sourceHealthy && !lagging ? 'text-petrol' : 'text-amber-600'}`} />
           </div>
 
-          <dl className="mt-6 divide-y divide-[#263246] border-y border-[#263246]">
+          <dl className="mt-6 divide-y divide-seam border-y border-seam">
             <HealthRow label="Source" value={source?.name ?? 'Not registered'} />
-            <HealthRow label="State" value={source?.status ?? 'Unknown'} valueClass={sourceHealthy ? 'text-cyan-200' : 'text-amber-200'} />
-            <HealthRow label="Capture lag" value={stats.captureLag} valueClass={lagging ? 'text-amber-200' : 'text-slate-200'} />
-            <HealthRow label="Dead letters" value={String(stats.dlqDepth)} valueClass={stats.dlqDepth > 0 ? 'text-rose-200' : 'text-slate-200'} />
+            <HealthRow label="State" value={source?.status ?? 'Unknown'} valueClass={sourceHealthy ? 'text-petrol-deep' : 'text-amber-700'} />
+            <HealthRow label="Capture lag" value={stats.captureLag} valueClass={lagging ? 'text-amber-700' : 'text-body'} />
+            <HealthRow label="Dead letters" value={String(stats.dlqDepth)} valueClass={stats.dlqDepth > 0 ? 'text-rose-700' : 'text-body'} />
           </dl>
 
-          <p className="mt-5 text-xs leading-5 text-slate-500">RelayDB persists each committed transaction before acknowledging its WAL position.</p>
+          <p className="mt-5 text-xs leading-5 text-soft">RelayDB persists each committed transaction before acknowledging its WAL position.</p>
         </aside>
       </section>
+
+      <WhySection />
+      <SiteFooter />
     </div>
   )
 }
 
-function HealthRow({ label, value, valueClass = 'text-slate-200' }: { label: string; value: string; valueClass?: string }) {
+function HealthRow({ label, value, valueClass = 'text-body' }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-3 text-sm">
-      <dt className="text-slate-500">{label}</dt>
+      <dt className="text-faint">{label}</dt>
       <dd className={`font-data text-xs ${valueClass}`}>{value}</dd>
     </div>
   )

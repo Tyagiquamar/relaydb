@@ -19,8 +19,19 @@ async function proxy(req: NextRequest, { params }: { params: Promise<{ path: str
 
   const body = req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.text()
 
+  // Free-tier instances sleep; first request wakes them (~30-60s). One patient
+  // attempt, then a single retry before surfacing a gateway error.
+  const send = () =>
+    fetch(target, { method: req.method, headers, body, cache: 'no-store', signal: AbortSignal.timeout(25_000) })
+
   try {
-    const res = await fetch(target, { method: req.method, headers, body, cache: 'no-store' })
+    let res: Response
+    try {
+      res = await send()
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 8_000))
+      res = await send()
+    }
     const text = await res.text()
     return new NextResponse(text, {
       status: res.status,
