@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pglogrepl"
+	"github.com/jackc/pgx/v5"
 	"github.com/tyagiquamar/relaydb/internal/eventstore"
 	"github.com/tyagiquamar/relaydb/internal/lease"
 	"github.com/tyagiquamar/relaydb/internal/partition"
