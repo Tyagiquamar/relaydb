@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Vet + full suite, including the testcontainers logical-replication e2e
+      # (Docker is preinstalled on the runner).
+      - name: Verify
+        run: make verify
+
+      # Full suite under the race detector. Needs CGO + a C toolchain;
+      # ubuntu runners ship gcc.
+      - name: Race detector
+        run: make race
