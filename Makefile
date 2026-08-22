@@ -43,10 +43,6 @@ clean:
 test-integration:
 	$(GO) test -tags=integration ./tests/integration/...
 
-# Run failure tests (requires Docker)
-test-failure:
-	$(GO) test -tags=integration ./tests/failure/...
-
 # Run all tests including integration
 test-all:
 	$(GO) test -tags=integration ./...

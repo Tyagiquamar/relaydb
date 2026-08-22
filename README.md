@@ -137,9 +137,9 @@ pnpm --dir dashboard exec tsc --noEmit
 pnpm --dir dashboard build
 ```
 
-Integration and failure-test targets exist under `tests/integration` and
-`tests/failure`. They require Docker and are being expanded into real
-logical-replication proof scenes; do not treat the current scaffolding as a
+Integration coverage lives under `tests/integration`: real logical replication
+against throwaway PostgreSQL via testcontainers (requires Docker). A dedicated
+failure-scene suite is planned next; do not treat the current tests as a
 production certification.
 
 ## Capability Boundary

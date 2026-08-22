@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pglogrepl"
@@ -22,11 +23,15 @@ type Client struct {
 	connMu sync.Mutex // Protects conn state changes
 
 	// State
-	receivedLSN LSN
-	flushedLSN  LSN // Passed in from checkpoint
+	receivedLSN LSN // Written only by the receive loop
+
+	// flushedLSN is the last handler-confirmed flush position. It is written
+	// by the receive loop after OnMessage and read by sendStatusUpdate, which
+	// runs on both the receive loop and the connection loop, so every access
+	// goes through the atomic.
+	flushedLSN atomic.Uint64
 
 	// Channels for communication with conn goroutine
-	statusCh chan LSN
 	errCh    chan error
 	doneCh   chan struct{}
 
@@ -61,10 +66,9 @@ type Handler interface {
 // NewClient creates a replication client.
 func NewClient(cfg Config) *Client {
 	return &Client{
-		config:   cfg,
-		statusCh: make(chan LSN, 1),
-		errCh:    make(chan error, 1),
-		doneCh:   make(chan struct{}),
+		config: cfg,
+		errCh:  make(chan error, 1),
+		doneCh: make(chan struct{}),
 	}
 }
 
@@ -147,9 +151,6 @@ func (c *Client) connLoop(ctx context.Context, sysident pglogrepl.IdentifySystem
 			return
 		case <-c.doneCh:
 			return
-		case lsn := <-c.statusCh:
-			// Update flushed LSN from handler
-			c.flushedLSN = lsn
 		case <-ticker.C:
 			// Send periodic status update
 			c.sendStatusUpdate(ctx)
@@ -235,11 +236,7 @@ func (c *Client) handleXLogData(ctx context.Context, data []byte, decoder *Decod
 
 	// Update flushed LSN if provided
 	if flushLSN > 0 {
-		c.flushedLSN = flushLSN
-		select {
-		case c.statusCh <- flushLSN:
-		default:
-		}
+		c.flushedLSN.Store(uint64(flushLSN))
 	}
 
 	return nil
@@ -271,10 +268,12 @@ func (c *Client) sendStatusUpdate(ctx context.Context) error {
 		return fmt.Errorf("no connection")
 	}
 
+	flushed := LSN(c.flushedLSN.Load())
+
 	update := pglogrepl.StandbyStatusUpdate{
-		WALWritePosition: c.flushedLSN,
-		WALFlushPosition: c.flushedLSN,
-		WALApplyPosition: c.flushedLSN,
+		WALWritePosition: flushed,
+		WALFlushPosition: flushed,
+		WALApplyPosition: flushed,
 		ClientTime:       time.Now(),
 		ReplyRequested:   false,
 	}
